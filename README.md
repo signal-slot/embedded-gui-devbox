@@ -1,5 +1,7 @@
 # embedded-gui-devbox
 
+English | [日本語](README.ja.md)
+
 Ubuntu 26.04 dev container for AI-assisted embedded GUI development.
 Bundles two CLI coding agents (Claude Code + OpenAI Codex), a stack of
 MCP servers tuned for design-to-code workflows, and Qt 6 build tooling.
