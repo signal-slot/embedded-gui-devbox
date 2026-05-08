@@ -102,12 +102,18 @@ make rebuild     # docker compose build --no-cache (約 10 分)
 入力素材 (PSD / スクリーンショットなど) は `cc-home/` に直接置くと、
 コンテナ内から `~/...` でそのまま参照できる。
 
-ホストから `cc-home/` を覗く・バックアップする・git で管理する、
-どれも `sudo` も `docker exec` も不要。コンテナ内の `dev` ユーザは
-`HOST_UID` / `HOST_GID` に合わせて作られるので、ファイル所有者がホスト
-側と一致する。環境を一旦リセットしたいときは `rm -rf cc-home/` でよい
-(次回起動時にデフォルトの `$HOME` がコンテナ側で再生成されるが、
-ログイン状態と会話履歴は失われる)。
+ホストから `cc-home/` を覗く・バックアップするのは `sudo` も
+`docker exec` も不要 (コンテナ内 `dev` ユーザが `HOST_UID` /
+`HOST_GID` に合わせて作られるため、ファイル所有者がホスト側と一致
+する)。**プライベート** な git リポジトリにバックアップするのは構わない
+が、公開リポにはコミットしないこと (`.gitignore` で `cc-home/.gitkeep`
+だけが追跡されるよう設定済)。
+
+環境を初期化するには `rm -rf cc-home/*` して `make qt` を再実行する。
+Makefile が `cc-home/.mcp.json` をリポジトリのテンプレートから再生成
+する。ログイン状態と会話履歴は失われ、image 側の `/home/dev`
+デフォルトは復元されない (bind mount なので image の `/home/dev` は
+表に出てこない)。
 
 ## ホストへの X11 転送
 
@@ -175,6 +181,6 @@ mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
 | ------------------------------------------ | ---- |
 | MCP の起動がタイムアウトする               | env ブロックに `QT_PLUGIN_PATH` が入っているか確認 (`config.toml` または `.mcp.json`) |
 | X11 connection refused                     | ホスト側で `xhost +SI:localuser:$(id -un)` を実行 |
-| コンテナを再起動するとログインが消える     | `cc-home/.claude.json` が UID 1000 で書き込み可能であること。`chown -R 1000:100 cc-home/` で直す |
+| コンテナを再起動するとログインが消える     | `cc-home/.claude.json` がコンテナ内 `dev` ユーザで書き込み可能であること。`chown -R $(id -u):$(id -g) cc-home/` でビルド時のホスト UID/GID に揃える |
 | ビルド中に apt mirror がリトライを繰り返す | resolute (Ubuntu 26.04) のリポジトリは新しく、一部 mirror が不安定。1 つの遅いレイヤで約 10 分待てば通る (キャッシュ後は再発しない) |
 | `make codex` が `stdin is not a terminal` で落ちる | 実 TTY のターミナルから起動する (CI パイプライン等からは起動できない) |

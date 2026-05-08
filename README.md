@@ -8,6 +8,11 @@ MCP servers tuned for design-to-code workflows, and Qt 6 build tooling.
 A multi-stage Dockerfile carves out per-framework variants
 (`qt` / `slint` / `flutter` / `lvgl`) so you only pull what you need.
 
+> The Qt 6 runtime is in every variant. `mcp-vnc`, `mcp-design2gui`,
+> and `qtvncglplugin` are all Qt 6 binaries, so Qt 6 is a hard runtime
+> dependency for the MCP infrastructure even when your target
+> framework is Slint, Flutter, or LVGL.
+
 ## Build variants
 
 Each variant is a separate stage in the Dockerfile, all extending the
@@ -95,11 +100,19 @@ Everything the container writes to `$HOME` persists here:
 Drop any input artefacts (PSDs, screenshots, etc.) directly into
 `cc-home/` to make them available at `~/...` inside the container.
 
-Inspect / back up / git-track this directory directly from the host —
-no `sudo` or `docker exec` needed (the in-container `dev` user is built
-to match `HOST_UID` / `HOST_GID`, so file ownership lines up). Wipe the
-env with `rm -rf cc-home/` (the container repopulates HOME defaults on
-next start, but you lose login state and conversation history).
+Inspect or back up this directory directly from the host — no `sudo`
+or `docker exec` needed (the in-container `dev` user is built to match
+`HOST_UID` / `HOST_GID`, so file ownership lines up). Backing it up
+into a *private* git repo is fine; never commit it to the public repo
+(`.gitignore` is set up so this is hard to do by accident — only the
+`cc-home/.gitkeep` placeholder is tracked).
+
+To reset the env, `rm -rf cc-home/*` and run `make qt` again — the
+Makefile recreates `cc-home/.mcp.json` from the repo template on the
+next build. Login state and conversation history are gone, and the
+`/home/dev` defaults from the image are *not* restored (bind-mounted
+host directory, so the container's image-side `/home/dev` is shadowed
+out).
 
 ## X11 forwarding to the host
 
@@ -165,6 +178,6 @@ All of these can be passed inline or set in a `.env` file next to
 | --- | --- |
 | MCP startup timeout | check `QT_PLUGIN_PATH` is in the env block (`config.toml` or `.mcp.json`) |
 | X11 connection refused | run `xhost +SI:localuser:$(id -un)` on the host |
-| Login forgotten on container restart | `cc-home/.claude.json` must be writable by UID 1000; `chown -R 1000:100 cc-home/` |
+| Login forgotten on container restart | `cc-home/.claude.json` must be writable by the in-container `dev` user; `chown -R $(id -u):$(id -g) cc-home/` to match the host user the image was built for |
 | apt mirror retries during build | resolute repos are fresh, mirrors flake; let the build ride out the retries (one slow layer of ~10 min, cached afterwards) |
 | `make codex` fails with `stdin is not a terminal` | run from a real interactive terminal, not from a tool / CI pipe |
