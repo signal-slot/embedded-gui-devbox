@@ -1,11 +1,34 @@
 # embedded-gui-devbox
 
 Ubuntu 26.04 dev container for AI-assisted embedded GUI development.
-Bundles two CLI coding agents (Claude Code + OpenAI Codex) and a stack of
-MCP servers tuned for design-to-code workflows, with Qt 6 build tooling
-preinstalled and X11 forwarding to the host display.
+Bundles two CLI coding agents (Claude Code + OpenAI Codex), a stack of
+MCP servers tuned for design-to-code workflows, and Qt 6 build tooling.
+A multi-stage Dockerfile carves out per-framework variants
+(`qt` / `slint` / `flutter` / `lvgl`) so you only pull what you need.
 
-## What's in the box
+## Build variants
+
+Each variant is a separate stage in the Dockerfile, all extending the
+common `qt` base. Pick one with `make <variant>`:
+
+| Variant | Image size | Adds |
+| --- | --- | --- |
+| `qt` | ~2.9 GB | base — Qt 6, claude/codex, MCP servers, qtvncgl |
+| `slint` | ~3.5 GB | + Rust toolchain (rustup, system-wide) |
+| `flutter` | ~4.8 GB | + Flutter stable + Linux desktop precache + Dart |
+| `lvgl` | ~3.0 GB | + SDL2 dev libs for the LVGL desktop simulator |
+
+```bash
+make qt          # the base everyone shares
+make slint       # for Slint Rust output from mcp-design2gui
+make flutter     # for Flutter output
+make lvgl        # for LVGL simulator builds
+```
+
+`run` / `claude` / `codex` default to the `qt` variant; override with
+`VARIANT=...` to use a different one.
+
+## What's in the `qt` base
 
 - Qt 6 dev tools (`qt6-base-dev`, `qt6-declarative-dev`, `qml6-module-*`,
   `libxcb-cursor0`, `fonts-noto-cjk`)
@@ -26,19 +49,26 @@ preinstalled and X11 forwarding to the host display.
 git clone https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
 
 # from this repo's root:
-make build       # cache-aware rebuild
+make qt          # build the qt variant
 make run         # interactive bash inside the container
 make claude      # launch Claude Code
 make codex       # launch OpenAI Codex CLI
 ```
 
-`make build` resolves `MCP_DESIGN2GUI_REV` from the git HEAD of
+Switch variants on the fly with `VARIANT`:
+
+```bash
+VARIANT=slint make claude       # claude inside the slint variant
+VARIANT=flutter make run        # interactive shell inside flutter
+```
+
+`make <variant>` resolves `MCP_DESIGN2GUI_REV` from the git HEAD of
 `$MCP_DESIGN2GUI_SRC`. Bumps to that hash invalidate just the COPY +
 cmake layers (~90s rebuild). Untouched layers (apt, Node, mcp-vnc,
-qtvncgl, codex, prompt-bridge) stay cached.
+qtvncgl, codex, prompt-bridge, plus per-variant tooling) stay cached.
 
-When a `git rev-parse` cache key isn't enough (e.g. uncommitted local
-changes), force a full rebuild:
+When the `git rev-parse` cache key isn't enough (e.g. uncommitted local
+changes), force a full rebuild of the active variant:
 
 ```bash
 make rebuild     # docker compose build --no-cache (~10 min)
@@ -83,7 +113,7 @@ NVIDIA-driver-mismatch case where mesa GLX fails.
 
 ## MCP servers
 
-Three MCP servers ship in the image (`/usr/local/bin/`):
+Three MCP servers ship in every variant (`/usr/local/bin/`):
 
 | Binary | Role |
 | --- | --- |
@@ -100,13 +130,13 @@ edit one):
 Both have the same essentials per-server (`DISPLAY`, `XAUTHORITY`, and
 `QT_PLUGIN_PATH` for the QtMcpServer stdio plugin in
 `/usr/local/lib/qt6`). Without `QT_PLUGIN_PATH`, mcp-vnc and
-mcp-design2gui die at startup with `"stdio" not found` and the MCP client
-times out — codex strips the parent env on spawn, so the explicit env
-block is mandatory there.
+mcp-design2gui die at startup with `"stdio" not found` and the MCP
+client times out — codex strips the parent env on spawn, so the explicit
+env block is mandatory there.
 
-## Layer ordering (Dockerfile)
+## Dockerfile layer ordering
 
-Layers are ordered from "rarely changes" to "changes most":
+The `qt` stage is structured from "rarely changes" to "changes most":
 
 1. `apt` — system + Qt 6 dev (longest, very stable)
 2. `apt` — `libxcb-cursor0` + `fonts-noto-cjk`
@@ -121,6 +151,9 @@ Layers are ordered from "rarely changes" to "changes most":
 
 Bumping `MCP_DESIGN2GUI_REV` invalidates only steps 9–10.
 
+The `slint` / `flutter` / `lvgl` stages each `FROM qt` and add their own
+toolchain on top, so all variants share the cache for steps 1–10.
+
 ## Updating mcp-design2gui from local commits
 
 mcp-design2gui sources are injected from the local clone via BuildKit's
@@ -128,14 +161,15 @@ mcp-design2gui sources are injected from the local clone via BuildKit's
 change in the local clone, then:
 
 ```bash
-make build       # the Makefile picks up the new HEAD via git rev-parse
+make qt          # the Makefile picks up the new HEAD via git rev-parse
+                 # (or whichever variant you use)
 ```
 
-Uncommitted changes are not picked up by the cache key. Either commit, or
-override the rev manually for one-shot testing:
+Uncommitted changes are not picked up by the cache key. Either commit,
+or override the rev manually for one-shot testing:
 
 ```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make build
+MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
 ```
 
 ## Updating mcp-vnc / qtvncglplugin
@@ -144,14 +178,15 @@ Both are cloned over HTTPS at build time (no local-source pattern). To
 pick up an upstream push:
 
 ```bash
-git push           # in the upstream repo
-make rebuild       # full --no-cache rebuild (the only way to re-clone)
+git push          # in the upstream repo
+make rebuild      # full --no-cache rebuild of the active variant
 ```
 
 ## Knobs
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
+| `VARIANT` | `qt` | Selects the Dockerfile stage / image tag for `run` / `claude` / `codex` |
 | `HOST_UID`, `HOST_GID` | `id -u` / `id -g` of the host user | Baked into the image so file ownership matches |
 | `MCP_DESIGN2GUI_SRC` | `$HOME/src/mcp-design2gui` | Path to local mcp-design2gui clone |
 | `MCP_DESIGN2GUI_REV` | HEAD of the above clone, or `dev` | Build-arg used as cache key for design2gui |
@@ -167,5 +202,5 @@ All of these can be passed inline or set in a `.env` file next to
 | MCP startup timeout | check `QT_PLUGIN_PATH` is in the env block (`config.toml` or `.mcp.json`) |
 | X11 connection refused | run `xhost +SI:localuser:$(id -un)` on the host |
 | Login forgotten on container restart | `cc-home/.claude.json` must be writable by UID 1000; `chown -R 1000:100 cc-home/` |
-| apt mirror retries during build | resolute repos are fresh, mirrors flake; let `make build` ride out the retries (one slow layer of ~10 min, cached afterwards) |
+| apt mirror retries during build | resolute repos are fresh, mirrors flake; let the build ride out the retries (one slow layer of ~10 min, cached afterwards) |
 | `make codex` fails with `stdin is not a terminal` | run from a real interactive terminal, not from a tool / CI pipe |
