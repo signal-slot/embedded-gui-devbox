@@ -2,173 +2,170 @@
 
 [English](README.md) | 日本語
 
-組み込み GUI 開発を AI エージェントで支援する Ubuntu 26.04 dev
-container。2 つの CLI コーディングエージェント (Claude Code + OpenAI
-Codex)、デザイン→コード変換用の MCP サーバ群、Qt 6 ビルドツールを同梱。
-multi-stage Dockerfile でフレームワーク別の variant (`qt` / `slint` /
-`flutter` / `lvgl`) を切り出してあり、必要なものだけ pull できる。
+AI コーディングエージェントを使って組み込み GUI を開発するための
+Ubuntu 26.04 ベース dev container。CLI エージェント 2 種 (Claude Code
+と OpenAI Codex) に加えて、デザインからコードへの変換を支える MCP
+サーバ群を同梱している。multi-stage Dockerfile で `qt` / `slint` /
+`flutter` / `lvgl` の 4 つのバリアントに分けてあるので、使うフレームワーク
+に合わせて必要なものだけビルドすればよい。
 
-## ビルド variant
+> Qt 6 のランタイムは全バリアントに含まれる。`mcp-vnc` /
+> `mcp-design2gui` / `qtvncglplugin` がいずれも Qt 6 製なので、Slint・
+> Flutter・LVGL を出力先にする場合でも Qt 6 は必須依存になる。
 
-各 variant は Dockerfile の独立したステージで、すべて `qt` ベースを継承。
-`make <variant>` で選択:
+## バリアント
 
-| Variant | イメージサイズ | 追加内容 |
-| --- | --- | --- |
-| `qt` | ~2.9 GB | ベース — Qt 6、claude/codex、MCP サーバ、qtvncgl |
-| `slint` | ~3.5 GB | + Rust toolchain (rustup、システム全体) |
-| `flutter` | ~4.8 GB | + Flutter stable + Linux desktop precache + Dart |
-| `lvgl` | ~3.0 GB | + LVGL デスクトップ simulator 用 SDL2 dev libs |
+各バリアントは Dockerfile の独立したステージで、すべて `qt` ベースを
+継承する。`make <variant>` で選択する:
+
+| バリアント | イメージサイズ | `qt` から追加されるもの |
+| ---------- | -------------- | ----------------------- |
+| `qt`       | 約 2.9 GB      | (ベース) Qt 6 / claude / codex / MCP サーバ / qtvncgl |
+| `slint`    | 約 3.5 GB      | Rust toolchain (rustup を `/usr/local/cargo` に system-wide install) |
+| `flutter`  | 約 4.8 GB      | Flutter stable + Dart + Linux desktop 用 engine の precache |
+| `lvgl`     | 約 3.0 GB      | LVGL の desktop simulator 向け SDL2 開発パッケージ |
 
 ```bash
-make qt          # 全 variant 共通のベース
-make slint       # mcp-design2gui の Slint Rust 出力用
-make flutter     # Flutter 出力用
-make lvgl        # LVGL simulator ビルド用
+make qt          # 全バリアント共通のベース
+make slint       # mcp-design2gui の Slint (Rust) 出力を扱う場合
+make flutter     # 同 Flutter 出力を扱う場合
+make lvgl        # LVGL の simulator build を扱う場合
 ```
 
-`run` / `claude` / `codex` は既定で `qt` variant を使う。`VARIANT=...`
-で別 variant に切り替え可能。
+`run` / `claude` / `codex` は既定で `qt` バリアントを使う。別バリアント
+に切り替えるときは `VARIANT=...` を前置する。
 
-## `qt` ベースの中身
+## `qt` ベースに入っているもの
 
-- Qt 6 開発ツール (`qt6-base-dev`, `qt6-declarative-dev`, `qml6-module-*`,
-  `libxcb-cursor0`, `fonts-noto-cjk`)
+- Qt 6 開発ツール (`qt6-base-dev`, `qt6-declarative-dev`,
+  `qml6-module-*`, `libxcb-cursor0`, `fonts-noto-cjk`)
 - Node.js 22 LTS
 - Claude Code CLI (`claude`) と OpenAI Codex CLI (`codex`)
 - MCP サーバ
-  - `mcp-design2gui` — PSD / Figma → QML / Slint / Flutter エクスポータ
+  - `mcp-design2gui` — PSD / Figma を QML / Slint / Flutter に書き出す
+    エクスポータ
   - `mcp-vnc` — Qt アプリを MCP プロトコル経由で操作する VNC クライアント
-  - `mcp-prompt-bridge` — 上流 MCP サーバの prompt を MCP tool として再公開
-- `qtvncglplugin` — Qt 用 GPU アクセラレート VNC プラットフォームプラグイン
-- ホストディスプレイへの X11 フォワーディング
+  - `mcp-prompt-bridge` — 上流 MCP サーバの prompt を MCP tool として
+    再公開するブリッジ
+- `qtvncglplugin` — GPU アクセラレーションする Qt 用 VNC platform plugin
+- ホスト X サーバへの画面転送
 
-## クイックスタート
+## 使い方
 
 ```bash
-# 一度だけ: MCP_DESIGN2GUI_SRC が指す場所に mcp-design2gui を clone
+# 一度だけ: MCP_DESIGN2GUI_SRC が指す場所に mcp-design2gui を clone する
 # (デフォルト: $HOME/src/mcp-design2gui)
 git clone https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
 
-# このリポジトリのルートから:
-make qt          # qt variant をビルド
+# このリポジトリのルートで:
+make qt          # qt バリアントをビルド
 make run         # コンテナ内で対話 bash
 make claude      # Claude Code を起動
 make codex       # OpenAI Codex CLI を起動
 ```
 
-別 variant を一時的に使うなら `VARIANT` で上書き:
+別バリアントを使うときは `VARIANT` で上書きする:
 
 ```bash
-VARIANT=slint make claude       # slint variant 内で claude
-VARIANT=flutter make run        # flutter variant の対話 shell
+VARIANT=slint make claude       # slint バリアントで claude を起動
+VARIANT=flutter make run        # flutter バリアントの対話 shell
 ```
 
-`make <variant>` は `$MCP_DESIGN2GUI_SRC` の git HEAD から
-`MCP_DESIGN2GUI_REV` を解決する。HEAD が変わると COPY + cmake レイヤ
-だけが invalidate される (約 90 秒の rebuild)。それ以外 (apt、Node、
-mcp-vnc、qtvncgl、codex、prompt-bridge、各 variant の追加ツール) は
-キャッシュ維持。
+`make <variant>` を実行すると、Makefile が `$MCP_DESIGN2GUI_SRC` の git
+HEAD から `MCP_DESIGN2GUI_REV` を解決して BuildKit に渡す。HEAD が
+変わると COPY と cmake の段だけ invalidate され (約 90 秒のリビルド)、
+それ以外 (apt、Node.js、mcp-vnc、qtvncgl、codex、prompt-bridge、
+バリアント固有の追加ツール) はキャッシュが効いたままになる。
 
-`git rev-parse` ベースのキャッシュキーで足りない場合 (uncommitted な
-変更を取り込みたい等) はフルリビルド:
+git rev-parse をキャッシュキーにするだけで足りない場合 — たとえば
+mcp-design2gui の未コミット変更を反映したいとき — はキャッシュ無しの
+フルビルドを使う:
 
 ```bash
-make rebuild     # docker compose build --no-cache (~10 分)
+make rebuild     # docker compose build --no-cache (約 10 分)
 ```
 
-## 永続状態 (`cc-home/`)
+## コンテナ内 `$HOME` の永続化 (`cc-home/`)
 
 `cc-home/` はコンテナ内の `/home/dev` に bind mount される。コンテナが
-`$HOME` に書いたものはすべてここに残る:
+`$HOME` 配下に書いた内容はすべてここに残る:
 
-| パス | 内容 |
-| --- | --- |
-| `cc-home/.claude/` | claude code のプロジェクト・履歴・認証情報 |
-| `cc-home/.claude.json` | claude code のメイン設定 |
-| `cc-home/.mcp.json` | MCP サーバ登録 (claude が読む) |
-| `cc-home/.codex/` | codex の設定とセッション |
+| パス                  | 内容 |
+| --------------------- | ---- |
+| `cc-home/.claude/`    | Claude Code のプロジェクト履歴・認証情報 |
+| `cc-home/.claude.json` | Claude Code のメイン設定 |
+| `cc-home/.mcp.json`   | MCP サーバ登録 (Claude Code が読む) |
+| `cc-home/.codex/`     | Codex の設定とセッション |
 
-入力ファイル (PSD・スクリーンショット等) は `cc-home/` に直接置けば、
-コンテナ内から `~/...` でアクセスできる。
+入力素材 (PSD / スクリーンショットなど) は `cc-home/` に直接置くと、
+コンテナ内から `~/...` でそのまま参照できる。
 
-ホストから `cc-home/` を直接見る・バックアップする・git で管理する、
-すべて `sudo` も `docker exec` も不要 (コンテナ内 `dev` ユーザは
-`HOST_UID` / `HOST_GID` に揃えて作られるので所有権が一致する)。環境を
-初期化するなら `rm -rf cc-home/` (次回起動時にコンテナがホーム
-デフォルトを再生成するが、ログイン状態と会話履歴は失われる)。
+ホストから `cc-home/` を覗く・バックアップする・git で管理する、
+どれも `sudo` も `docker exec` も不要。コンテナ内の `dev` ユーザは
+`HOST_UID` / `HOST_GID` に合わせて作られるので、ファイル所有者がホスト
+側と一致する。環境を一旦リセットしたいときは `rm -rf cc-home/` でよい
+(次回起動時にデフォルトの `$HOME` がコンテナ側で再生成されるが、
+ログイン状態と会話履歴は失われる)。
 
-## ホスト X への画面転送
+## ホストへの X11 転送
 
-コンテナ内の GUI アプリはホストの X サーバに表示される。ホストに
-ログインするたびに以下を 1 回:
+コンテナ内で起動した GUI アプリはホストの X サーバに表示される。
+ホストにログインするたびに 1 度だけ次を実行する:
 
 ```bash
 xhost +SI:localuser:$(id -un)        # 自分のユーザに :0 への接続を許可
 ```
 
-compose ファイルが `/tmp/.X11-unix` と `$XAUTHORITY` を bind mount し、
+compose 側で `/tmp/.X11-unix` と `$XAUTHORITY` を bind mount し、
 `DISPLAY` はホスト環境から継承される。
 
-Qt アプリ (qtvncgl プラットフォームプラグインを含む) で動作確認済み。
+Qt アプリ (qtvncgl platform plugin を使うものを含む) で動作確認済み。
 mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
-`QT_QUICK_BACKEND=software` のソフトウェアフォールバックで対応。
+`QT_QUICK_BACKEND=software` でソフトウェアレンダラに切り替えれば動く。
 
 ## MCP サーバ
 
-3 つの MCP サーバが全 variant に同梱される (`/usr/local/bin/`):
+3 つの MCP サーバが全バリアントに同梱されていて、`/usr/local/bin/` に
+インストールされている:
 
-| バイナリ | 役割 |
-| --- | --- |
-| `mcp-design2gui` | PSD / Figma → QML / Slint / Flutter エクスポータ |
-| `mcp-vnc` | Qt アプリを MCP 経由で操作する VNC クライアント |
-| `mcp-prompt-bridge` | 上流 MCP サーバの prompt を MCP tool として再公開 |
+| バイナリ            | 役割 |
+| ------------------- | ---- |
+| `mcp-design2gui`    | PSD / Figma を QML / Slint / Flutter に書き出すエクスポータ |
+| `mcp-vnc`           | Qt アプリを MCP 経由で操作する VNC クライアント |
+| `mcp-prompt-bridge` | 上流 MCP サーバの prompt を MCP tool として再公開するブリッジ |
 
-設定は 2 ファイル (片方を編集したら手動で同期):
+設定ファイルは 2 つあり、片方を編集したらもう片方も手で同期する:
 
-- `cc-home/.mcp.json` — `claude` が読む
-- `cc-home/.codex/config.toml` — `codex` が読む
+- `cc-home/.mcp.json` — Claude Code が読む
+- `cc-home/.codex/config.toml` — Codex が読む
 
-両方とも各サーバ用に同じ必須環境変数 (`DISPLAY`, `XAUTHORITY`,
-`/usr/local/lib/qt6` の QtMcpServer stdio plugin 用 `QT_PLUGIN_PATH`)
-を持たせる。`QT_PLUGIN_PATH` がないと mcp-vnc と mcp-design2gui は
-起動時に `"stdio" not found` で死に、MCP クライアント側がタイムアウト
-する。codex は子プロセス起動時に親 env を全部剥がすため、env ブロック
-の明示記述は必須。
+どちらの設定でも各サーバごとに同じ環境変数 (`DISPLAY`, `XAUTHORITY`,
+`QT_PLUGIN_PATH=/usr/local/lib/qt6/plugins`) を渡す必要がある。
+`QT_PLUGIN_PATH` は QtMcpServer の stdio plugin を Qt が見つけるために
+必須で、設定し忘れると `mcp-vnc` と `mcp-design2gui` は起動時に
+`"stdio" not found` で死に、MCP クライアントがタイムアウトする。Codex
+は子プロセス起動時に親 env を全部剥がす実装なので、env ブロックを明示
+しないと環境変数が伝わらない。
 
-## Dockerfile レイヤ順序
+## Internals (内部仕様)
 
-`qt` ステージは「変わりにくい」→「変わりやすい」の順:
+メンテナ向けの解説 — レイヤ順序、キャッシュ戦略、`additional_contexts`
+の挙動、`patch-superbuild.sh` の役割など — は
+[`docs/internals.ja.md`](docs/internals.ja.md) にまとめてある。
 
-1. `apt` — システム + Qt 6 dev (最重・安定)
-2. `apt` — `libxcb-cursor0` + `fonts-noto-cjk`
-3. Node.js + claude-code
-4. `patch-superbuild.sh` の COPY
-5. mcp-vnc clone + cmake build
-6. qtvncglplugin clone + cmake build
-7. codex + mcp-prompt-bridge npm install
-8. **`ARG MCP_DESIGN2GUI_REV` ピボット**
-9. mcp-design2gui COPY (build context から) + cmake build
-10. ユーザ設定 (ホスト UID / GID 反映)
+## mcp-design2gui のローカルコミットを取り込む
 
-`MCP_DESIGN2GUI_REV` の bump は 9〜10 だけを invalidate する。
-
-`slint` / `flutter` / `lvgl` の各 variant は `FROM qt` で派生し、自分
-の toolchain を上に追加。1〜10 のキャッシュは全 variant で共有される。
-
-## ローカルコミットを取り込んで mcp-design2gui を更新する
-
-mcp-design2gui のソースは BuildKit の `additional_contexts` 経由で
-ローカル clone から注入される (`docker-compose.yml` で設定)。ローカル
-clone でコミットしてから:
+mcp-design2gui のソースはビルド時に clone するのではなく、BuildKit の
+`additional_contexts` でローカル clone から取り込まれる
+(`docker-compose.yml` で設定済)。ローカル clone でコミットした後:
 
 ```bash
-make qt          # Makefile が git rev-parse で新 HEAD を拾う
-                 # (もしくは普段使っている variant)
+make qt          # Makefile が git rev-parse で新 HEAD を拾い直す
+                  # (普段使っているバリアントで OK)
 ```
 
-uncommitted な変更はキャッシュキーに反映されない。コミットするか、
-一時的にキャッシュキーを手動で bump:
+未コミットの変更はキャッシュキーに反映されないので、コミットするか、
+1 回だけ手動で cache key を bump する:
 
 ```bash
 MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
@@ -176,33 +173,34 @@ MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
 
 ## mcp-vnc / qtvncglplugin の更新
 
-両方ともビルド時に HTTPS で git clone (ローカルソースパターンなし)。
-upstream への push を取り込むには:
+どちらもビルド時に HTTPS で clone する (ローカルソース連携はしていない)。
+upstream に push した変更を取り込むには:
 
 ```bash
-git push          # upstream リポジトリ側で
-make rebuild      # 再 clone のためフル --no-cache rebuild
+git push          # upstream リポジトリ側で push
+make rebuild      # 再 clone のため --no-cache のフルリビルド
 ```
 
-## ノブ
+## 環境変数
 
-| 環境変数 | デフォルト | 用途 |
-| --- | --- | --- |
-| `VARIANT` | `qt` | `run` / `claude` / `codex` で使う Dockerfile ステージ・イメージタグ |
-| `HOST_UID`, `HOST_GID` | ホストユーザの `id -u` / `id -g` | イメージに焼き込んでファイル所有権を一致させる |
-| `MCP_DESIGN2GUI_SRC` | `$HOME/src/mcp-design2gui` | mcp-design2gui ローカル clone のパス |
-| `MCP_DESIGN2GUI_REV` | 上記 clone の HEAD、無ければ `dev` | design2gui のキャッシュキー用 build-arg |
-| `ANTHROPIC_API_KEY` | 未設定 | ホストで設定されていればコンテナへ転送 |
+| 変数名               | デフォルト                   | 用途 |
+| -------------------- | ---------------------------- | ---- |
+| `VARIANT`            | `qt`                         | `run` / `claude` / `codex` で使う Dockerfile ステージとイメージタグ |
+| `HOST_UID`, `HOST_GID` | ホストユーザの `id -u` / `id -g` | コンテナ内の `dev` ユーザに焼き込んでファイル所有者を一致させる |
+| `MCP_DESIGN2GUI_SRC` | `$HOME/src/mcp-design2gui`   | mcp-design2gui のローカル clone のパス |
+| `MCP_DESIGN2GUI_REV` | 上記 clone の HEAD、または `dev` | design2gui 用キャッシュキー (build-arg) |
+| `ANTHROPIC_API_KEY`  | 未設定                       | ホスト側で設定しているとコンテナに転送される |
 
-これらはインライン指定でも、`docker-compose.yml` の隣に `.env` ファイル
-で設定してもよい。
+これらは `make` コマンドにインラインで渡してもいいし、
+`docker-compose.yml` の隣に `.env` ファイルを置いてまとめて指定しても
+いい。
 
 ## トラブルシュート
 
-| 症状 | 対応 |
-| --- | --- |
-| MCP の起動タイムアウト | env ブロックに `QT_PLUGIN_PATH` があるか確認 (`config.toml` か `.mcp.json`) |
-| X11 connection refused | ホスト側で `xhost +SI:localuser:$(id -un)` を実行 |
-| コンテナ再起動でログインが消える | `cc-home/.claude.json` が UID 1000 で書ける必要あり; `chown -R 1000:100 cc-home/` |
-| ビルド中に apt mirror retry | resolute リポジトリは新しく mirror が一時的に不安定。1 つ重いレイヤで約 10 分待つ (キャッシュ後は再発しない) |
-| `make codex` が `stdin is not a terminal` で落ちる | 実 TTY のターミナルから起動 (CI パイプライン等からは不可) |
+| 症状                                       | 対処 |
+| ------------------------------------------ | ---- |
+| MCP の起動がタイムアウトする               | env ブロックに `QT_PLUGIN_PATH` が入っているか確認 (`config.toml` または `.mcp.json`) |
+| X11 connection refused                     | ホスト側で `xhost +SI:localuser:$(id -un)` を実行 |
+| コンテナを再起動するとログインが消える     | `cc-home/.claude.json` が UID 1000 で書き込み可能であること。`chown -R 1000:100 cc-home/` で直す |
+| ビルド中に apt mirror がリトライを繰り返す | resolute (Ubuntu 26.04) のリポジトリは新しく、一部 mirror が不安定。1 つの遅いレイヤで約 10 分待てば通る (キャッシュ後は再発しない) |
+| `make codex` が `stdin is not a terminal` で落ちる | 実 TTY のターミナルから起動する (CI パイプライン等からは起動できない) |

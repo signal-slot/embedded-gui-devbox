@@ -136,25 +136,11 @@ mcp-design2gui die at startup with `"stdio" not found` and the MCP
 client times out — codex strips the parent env on spawn, so the explicit
 env block is mandatory there.
 
-## Dockerfile layer ordering
+## Internals
 
-The `qt` stage is structured from "rarely changes" to "changes most":
-
-1. `apt` — system + Qt 6 dev (longest, very stable)
-2. `apt` — `libxcb-cursor0` + `fonts-noto-cjk`
-3. Node.js + claude-code
-4. `patch-superbuild.sh` COPY
-5. mcp-vnc clone + cmake build
-6. qtvncglplugin clone + cmake build
-7. codex + mcp-prompt-bridge npm install
-8. **`ARG MCP_DESIGN2GUI_REV` pivot**
-9. mcp-design2gui COPY (from build context) + cmake build
-10. user setup (matches host UID / GID)
-
-Bumping `MCP_DESIGN2GUI_REV` invalidates only steps 9–10.
-
-The `slint` / `flutter` / `lvgl` stages each `FROM qt` and add their own
-toolchain on top, so all variants share the cache for steps 1–10.
+For maintainers / contributors: see [`docs/internals.md`](docs/internals.md)
+for the multi-stage layout, `qt` layer ordering, the `additional_contexts`
+plumbing for mcp-design2gui, and the role of `patch-superbuild.sh`.
 
 ## Updating mcp-design2gui from local commits
 
