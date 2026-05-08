@@ -1,20 +1,26 @@
-# Build / run helpers for the cc-qt6-mcp Docker environment.
+# Build / run helpers for the embedded-gui-devbox Docker environment.
 #
-#   make build    Cache-aware rebuild. Bumps MCP_DESIGN2GUI_REV from the
-#                 local mcp-design2gui git HEAD so committed changes are
-#                 always picked up.
-#   make rebuild  Full --no-cache rebuild (~10 min). Use when something
-#                 fishy happens with the cache (e.g. uncommitted changes
-#                 that the rev-based cache-bust can't catch).
-#   make run      Interactive bash shell inside the container.
-#   make claude   Launch Claude Code inside the container.
-#   make codex    Launch OpenAI Codex CLI inside the container.
-#   make clean    Remove the cc-qt6-mcp image.
+# Build variants (each maps to a Dockerfile stage of the same name):
+#
+#   make qt         Qt 6 only (base image, ~2.4 GB)
+#   make slint      qt + Rust toolchain for Slint
+#
+# Run / use the active variant (defaults to qt; override with VARIANT=...):
+#
+#   make run                    interactive bash inside the container
+#   make claude                 launch Claude Code
+#   make codex                  launch OpenAI Codex CLI
+#   VARIANT=slint make claude   same, in the Slint variant
+#
+# Misc:
+#
+#   make rebuild    full --no-cache build of the active variant
+#   make clean      remove all built variant images
 #
 # Override knobs:
-#   MCP_DESIGN2GUI_SRC=/path/to/clone   make build
-#   MCP_DESIGN2GUI_REV=dev-$(date +%s)  make build   # force cache-bust
-#                                                    # (useful for dirty trees)
+#   VARIANT=slint                       make qt slint
+#   MCP_DESIGN2GUI_SRC=/path/to/clone   make qt
+#   MCP_DESIGN2GUI_REV=dev-$(date +%s)  make qt   # force cache-bust
 
 MCP_DESIGN2GUI_SRC ?= $(HOME)/src/mcp-design2gui
 
@@ -24,27 +30,38 @@ MCP_DESIGN2GUI_SRC ?= $(HOME)/src/mcp-design2gui
 GIT_REV := $(shell git -C $(MCP_DESIGN2GUI_SRC) rev-parse HEAD 2>/dev/null)
 MCP_DESIGN2GUI_REV ?= $(if $(GIT_REV),$(GIT_REV),dev)
 
+VARIANT ?= qt
+
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 export MCP_DESIGN2GUI_SRC
 export MCP_DESIGN2GUI_REV
+export VARIANT
 
 COMPOSE := docker compose
-IMAGE := cc-qt6-mcp:ubuntu-26.04
+IMAGE_NAME := embedded-gui-devbox
+TARGETS := qt slint
 
-.PHONY: help build rebuild run claude codex clean
+.PHONY: help $(TARGETS) rebuild run claude codex clean
 
 help:
-	@echo "Targets:"
-	@echo "  build    cache-aware build (MCP_DESIGN2GUI_REV=$(MCP_DESIGN2GUI_REV))"
-	@echo "  rebuild  full --no-cache build"
-	@echo "  run      interactive shell in container"
-	@echo "  claude   launch Claude Code in container"
-	@echo "  codex    launch OpenAI Codex CLI in container"
-	@echo "  clean    remove image $(IMAGE)"
+	@echo "Build variants:"
+	@for t in $(TARGETS); do echo "  make $$t"; done
+	@echo ""
+	@echo "Run (defaults to VARIANT=$(VARIANT); override with e.g. VARIANT=slint):"
+	@echo "  make run     interactive shell"
+	@echo "  make claude  launch Claude Code"
+	@echo "  make codex   launch OpenAI Codex CLI"
+	@echo ""
+	@echo "Misc:"
+	@echo "  make rebuild  --no-cache rebuild of the active variant"
+	@echo "  make clean    remove all built $(IMAGE_NAME):* images"
+	@echo ""
+	@echo "Active design2gui rev: $(MCP_DESIGN2GUI_REV)"
 
-build:
-	$(COMPOSE) build
+# Each variant target sets VARIANT=<itself> for the duration of one build.
+$(TARGETS):
+	VARIANT=$@ $(COMPOSE) build
 
 rebuild:
 	$(COMPOSE) build --no-cache
@@ -59,4 +76,4 @@ codex:
 	$(COMPOSE) run --rm cc codex
 
 clean:
-	-docker rmi $(IMAGE)
+	-for v in $(TARGETS); do docker rmi $(IMAGE_NAME):$$v 2>/dev/null; done

@@ -1,4 +1,4 @@
-FROM ubuntu:26.04
+FROM ubuntu:26.04 AS qt
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Tokyo
@@ -122,4 +122,20 @@ ENV LC_ALL=ja_JP.UTF-8
 ENV QT_X11_NO_MITSHM=1
 ENV QT_PLUGIN_PATH=/usr/local/lib/qt6/plugins
 
+CMD ["bash"]
+
+
+# ============================================================================
+# Slint variant — qt base + Rust toolchain (rustup, system-wide).
+# Build with: make slint
+# ============================================================================
+FROM qt AS slint
+USER root
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path \
+ && chmod -R a+w /usr/local/cargo /usr/local/rustup
+USER dev
 CMD ["bash"]

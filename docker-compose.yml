@@ -3,15 +3,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: ${VARIANT:-qt}
       args:
         UID: "${HOST_UID:-1000}"
         GID: "${HOST_GID:-1000}"
         MCP_DESIGN2GUI_REV: "${MCP_DESIGN2GUI_REV:-dev}"
       additional_contexts:
         mcp-design2gui-src: ${MCP_DESIGN2GUI_SRC:-${HOME}/src/mcp-design2gui}
-    image: cc-qt6-mcp:ubuntu-26.04
-    container_name: cc-qt6-mcp
-    hostname: cc-qt6-mcp
+    image: embedded-gui-devbox:${VARIANT:-qt}
+    container_name: embedded-gui-devbox
+    hostname: embedded-gui-devbox
     network_mode: host
     environment:
       - DISPLAY=${DISPLAY}
