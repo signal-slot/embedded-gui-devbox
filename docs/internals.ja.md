@@ -101,3 +101,30 @@ Qt モジュール (`qtmcp`, `qtpsd`, `qtvncclient`) を ExternalProject
 
 このパッチがないと内側の ExternalProject ビルドがホスト Qt のヘッダや
 cmake configs を見つけられず、ビルドが落ちる。
+
+## mcp-design2gui のローカルコミットを取り込む
+
+ローカルの mcp-design2gui clone でコミットしたあと:
+
+```bash
+make qt          # Makefile が git rev-parse で新 HEAD を拾い直す
+                 # (普段使っているバリアントで OK)
+```
+
+未コミットの変更はこの仕組みでは反映されない (HEAD が親コミットと同じ
+ままなのでキャッシュキーが変わらない)。ダーティな作業ツリーをそのまま
+試したいときは、cache key を手動で 1 回 bump する:
+
+```bash
+MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
+```
+
+## mcp-vnc / qtvncglplugin の更新
+
+どちらもビルド時に HTTPS で clone する (ローカルソース連携はしていない)。
+upstream に push した変更を取り込むには:
+
+```bash
+git push          # upstream リポジトリ側で push
+make rebuild      # 再 clone のため --no-cache のフルリビルド
+```

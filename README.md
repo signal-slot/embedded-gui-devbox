@@ -37,10 +37,14 @@ make lvgl        # for LVGL simulator builds
 - Node.js 22 LTS
 - Claude Code CLI (`claude`) and OpenAI Codex CLI (`codex`)
 - MCP servers
-  - `mcp-design2gui` — PSD / Figma → QML / Slint / Flutter exporter
-  - `mcp-vnc` — VNC client driving Qt apps via the MCP protocol
-  - `mcp-prompt-bridge` — re-exposes upstream MCP prompts as MCP tools
-- `qtvncglplugin` — GPU-accelerated VNC platform plugin for Qt
+  - [`mcp-design2gui`](https://github.com/signal-slot/mcp-design2gui) —
+    PSD / Figma → QML / Slint / Flutter exporter
+  - [`mcp-vnc`](https://github.com/signal-slot/mcp-vnc) — VNC client
+    driving Qt apps via the MCP protocol
+  - [`mcp-prompt-bridge`](https://www.npmjs.com/package/mcp-prompt-bridge) —
+    re-exposes upstream MCP prompts as MCP tools
+- [`qtvncglplugin`](https://github.com/signal-slot/qtvncglplugin) —
+  GPU-accelerated VNC platform plugin for Qt
 - X11 forwarding to the host display
 
 ## Quick start
@@ -117,11 +121,11 @@ NVIDIA-driver-mismatch case where mesa GLX fails.
 
 Three MCP servers ship in every variant (`/usr/local/bin/`):
 
-| Binary | Role |
-| --- | --- |
-| `mcp-design2gui` | PSD / Figma → QML / Slint / Flutter exporter |
-| `mcp-vnc` | VNC client driving Qt apps via the MCP protocol |
-| `mcp-prompt-bridge` | Re-exposes upstream MCP prompts as MCP tools |
+| Binary | Source | Role |
+| --- | --- | --- |
+| `mcp-design2gui` | [signal-slot/mcp-design2gui](https://github.com/signal-slot/mcp-design2gui) | PSD / Figma → QML / Slint / Flutter exporter |
+| `mcp-vnc` | [signal-slot/mcp-vnc](https://github.com/signal-slot/mcp-vnc) | VNC client driving Qt apps via the MCP protocol |
+| `mcp-prompt-bridge` | [npm: mcp-prompt-bridge](https://www.npmjs.com/package/mcp-prompt-bridge) | Re-exposes upstream MCP prompts as MCP tools |
 
 They are wired in through two config files (kept in sync manually if you
 edit one):
@@ -141,34 +145,6 @@ env block is mandatory there.
 For maintainers / contributors: see [`docs/internals.md`](docs/internals.md)
 for the multi-stage layout, `qt` layer ordering, the `additional_contexts`
 plumbing for mcp-design2gui, and the role of `patch-superbuild.sh`.
-
-## Updating mcp-design2gui from local commits
-
-mcp-design2gui sources are injected from the local clone via BuildKit's
-`additional_contexts` (configured in `docker-compose.yml`). Commit the
-change in the local clone, then:
-
-```bash
-make qt          # the Makefile picks up the new HEAD via git rev-parse
-                 # (or whichever variant you use)
-```
-
-Uncommitted changes are not picked up by the cache key. Either commit,
-or override the rev manually for one-shot testing:
-
-```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
-```
-
-## Updating mcp-vnc / qtvncglplugin
-
-Both are cloned over HTTPS at build time (no local-source pattern). To
-pick up an upstream push:
-
-```bash
-git push          # in the upstream repo
-make rebuild      # full --no-cache rebuild of the active variant
-```
 
 ## Knobs
 

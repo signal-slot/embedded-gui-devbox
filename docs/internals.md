@@ -102,3 +102,30 @@ qtmcp / qtpsd configures don't bail on a version mismatch.
 
 Without these patches the inner ExternalProject builds can't locate
 their host Qt headers or cmake configs.
+
+## Picking up local mcp-design2gui commits
+
+After committing in the local mcp-design2gui clone:
+
+```bash
+make qt          # the Makefile picks up the new HEAD via git rev-parse
+                 # (or whichever variant you use day-to-day)
+```
+
+For uncommitted changes (which all share the same HEAD as the parent
+commit and so map to the same cache key), bump the rev manually for
+one-shot testing:
+
+```bash
+MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
+```
+
+## Updating mcp-vnc / qtvncglplugin
+
+Both are cloned over HTTPS at build time (no local-source pattern). To
+pick up an upstream push:
+
+```bash
+git push          # in the upstream repo
+make rebuild      # full --no-cache rebuild of the active variant
+```

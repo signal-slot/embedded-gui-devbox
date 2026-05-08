@@ -42,12 +42,14 @@ make lvgl        # LVGL の simulator build を扱う場合
 - Node.js 22 LTS
 - Claude Code CLI (`claude`) と OpenAI Codex CLI (`codex`)
 - MCP サーバ
-  - `mcp-design2gui` — PSD / Figma を QML / Slint / Flutter に書き出す
-    エクスポータ
-  - `mcp-vnc` — Qt アプリを MCP プロトコル経由で操作する VNC クライアント
-  - `mcp-prompt-bridge` — 上流 MCP サーバの prompt を MCP tool として
-    再公開するブリッジ
-- `qtvncglplugin` — GPU アクセラレーションする Qt 用 VNC platform plugin
+  - [`mcp-design2gui`](https://github.com/signal-slot/mcp-design2gui) —
+    PSD / Figma を QML / Slint / Flutter に書き出すエクスポータ
+  - [`mcp-vnc`](https://github.com/signal-slot/mcp-vnc) — Qt アプリを
+    MCP プロトコル経由で操作する VNC クライアント
+  - [`mcp-prompt-bridge`](https://www.npmjs.com/package/mcp-prompt-bridge) —
+    上流 MCP サーバの prompt を MCP tool として再公開するブリッジ
+- [`qtvncglplugin`](https://github.com/signal-slot/qtvncglplugin) —
+  GPU アクセラレーションする Qt 用 VNC platform plugin
 - ホスト X サーバへの画面転送
 
 ## 使い方
@@ -128,11 +130,11 @@ mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
 3 つの MCP サーバが全バリアントに同梱されていて、`/usr/local/bin/` に
 インストールされている:
 
-| バイナリ            | 役割 |
-| ------------------- | ---- |
-| `mcp-design2gui`    | PSD / Figma を QML / Slint / Flutter に書き出すエクスポータ |
-| `mcp-vnc`           | Qt アプリを MCP 経由で操作する VNC クライアント |
-| `mcp-prompt-bridge` | 上流 MCP サーバの prompt を MCP tool として再公開するブリッジ |
+| バイナリ            | upstream | 役割 |
+| ------------------- | -------- | ---- |
+| `mcp-design2gui`    | [signal-slot/mcp-design2gui](https://github.com/signal-slot/mcp-design2gui) | PSD / Figma を QML / Slint / Flutter に書き出すエクスポータ |
+| `mcp-vnc`           | [signal-slot/mcp-vnc](https://github.com/signal-slot/mcp-vnc) | Qt アプリを MCP 経由で操作する VNC クライアント |
+| `mcp-prompt-bridge` | [npm: mcp-prompt-bridge](https://www.npmjs.com/package/mcp-prompt-bridge) | 上流 MCP サーバの prompt を MCP tool として再公開するブリッジ |
 
 設定ファイルは 2 つあり、片方を編集したらもう片方も手で同期する:
 
@@ -152,34 +154,6 @@ mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
 メンテナ向けの解説 — レイヤ順序、キャッシュ戦略、`additional_contexts`
 の挙動、`patch-superbuild.sh` の役割など — は
 [`docs/internals.ja.md`](docs/internals.ja.md) にまとめてある。
-
-## mcp-design2gui のローカルコミットを取り込む
-
-mcp-design2gui のソースはビルド時に clone するのではなく、BuildKit の
-`additional_contexts` でローカル clone から取り込まれる
-(`docker-compose.yml` で設定済)。ローカル clone でコミットした後:
-
-```bash
-make qt          # Makefile が git rev-parse で新 HEAD を拾い直す
-                  # (普段使っているバリアントで OK)
-```
-
-未コミットの変更はキャッシュキーに反映されないので、コミットするか、
-1 回だけ手動で cache key を bump する:
-
-```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
-```
-
-## mcp-vnc / qtvncglplugin の更新
-
-どちらもビルド時に HTTPS で clone する (ローカルソース連携はしていない)。
-upstream に push した変更を取り込むには:
-
-```bash
-git push          # upstream リポジトリ側で push
-make rebuild      # 再 clone のため --no-cache のフルリビルド
-```
 
 ## 環境変数
 
