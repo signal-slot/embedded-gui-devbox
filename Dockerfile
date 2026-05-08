@@ -139,3 +139,20 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
  && chmod -R a+w /usr/local/cargo /usr/local/rustup
 USER dev
 CMD ["bash"]
+
+
+# ============================================================================
+# LVGL variant — qt base + SDL2 dev libs for the LVGL desktop simulator.
+# LVGL itself is a header-mostly C library; users include it in their own
+# project. This stage just provides the build-time deps.
+# Build with: make lvgl
+# ============================================================================
+FROM qt AS lvgl
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libsdl2-dev libsdl2-image-dev \
+      libfreetype-dev libpng-dev libjpeg-dev \
+ && rm -rf /var/lib/apt/lists/*
+USER dev
+CMD ["bash"]
