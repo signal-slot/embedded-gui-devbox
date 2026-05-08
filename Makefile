@@ -4,6 +4,7 @@
 #
 #   make qt         Qt 6 only (base image, ~2.4 GB)
 #   make slint      qt + Rust toolchain for Slint
+#   make flutter    qt + Flutter SDK (Linux desktop precached, ~+1.3 GB)
 #   make lvgl       qt + SDL2 dev libs for the LVGL desktop simulator
 #
 # Run / use the active variant (defaults to qt; override with VARIANT=...):
@@ -41,7 +42,7 @@ export VARIANT
 
 COMPOSE := docker compose
 IMAGE_NAME := embedded-gui-devbox
-TARGETS := qt slint lvgl
+TARGETS := qt slint flutter lvgl
 
 .PHONY: help $(TARGETS) rebuild run claude codex clean
 

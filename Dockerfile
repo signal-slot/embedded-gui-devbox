@@ -156,3 +156,25 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 USER dev
 CMD ["bash"]
+
+
+# ============================================================================
+# Flutter variant — qt base + Flutter SDK (stable channel) with the Linux
+# desktop engine precached. ~1.3 GB on top of qt.
+# Build with: make flutter
+# ============================================================================
+FROM qt AS flutter
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      clang libgtk-3-dev libsecret-1-dev liblzma-dev \
+      unzip xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 -b stable https://github.com/flutter/flutter /opt/flutter \
+ && chown -R dev: /opt/flutter
+ENV PATH=/opt/flutter/bin:$PATH
+USER dev
+RUN git config --global --add safe.directory /opt/flutter \
+ && flutter precache --linux >/dev/null \
+ && flutter --version
+CMD ["bash"]
