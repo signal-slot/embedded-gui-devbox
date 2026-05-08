@@ -127,9 +127,44 @@ xhost +SI:localuser:$(id -un)        # 自分のユーザに :0 への接続を�
 compose 側で `/tmp/.X11-unix` と `$XAUTHORITY` を bind mount し、
 `DISPLAY` はホスト環境から継承される。
 
+注意点:
+
+- `$XAUTHORITY` (なければ `~/.Xauthority`) はホスト側に **ファイル**
+  として存在し、有効な cookie が入っている必要がある (`xauth list`
+  で 1 件以上表示されること)。両方とも無いと Docker は無言で空の
+  **ディレクトリ** を bind mount source に作成し、X11 ハンドシェイク
+  が壊れる。
+- Codex は MCP サーバを spawn するとき親 env を全部剥がすので、
+  `cc-home/.codex/config.toml` と `cc-home/.mcp.json` には `DISPLAY=:0`
+  が直書きしてある。`$DISPLAY` がそれ以外の値になるホスト
+  (SSH X forwarding は `:10` など、Xwayland はよく `:1`、Wayland 専用
+  セッションでは X display が無い) では、両ファイルを書き換えるか、
+  ウィンドウが要らないサーバは `QT_QPA_PLATFORM=offscreen` に倒す。
+
 Qt アプリ (qtvncgl platform plugin を使うものを含む) で動作確認済み。
 mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
 `QT_QUICK_BACKEND=software` でソフトウェアレンダラに切り替えれば動く。
+
+## セキュリティ境界
+
+このコンテナは AI コーディングエージェントの開発環境として、意図的に
+緩めの権限で動いている。以下を認識した上で使うこと:
+
+- `network_mode: host` でコンテナが開いたポートはそのままホストに
+  露出し、エージェントはホストの `localhost` のあらゆるサービスに
+  ファイアウォール無しでアクセスできる。
+- `/tmp/.X11-unix` と `$XAUTHORITY` を bind mount しているので、
+  コンテナ内のあらゆるプロセスがホストの X11 クライアント全部を
+  読めて操作できる (キー入力、スクリーンショット、ウィンドウ内容)。
+- `ANTHROPIC_API_KEY` がホストで設定されていればコンテナに転送される。
+  エージェントとそこから生まれた子プロセスは全部読める。
+- コンテナ内 `dev` ユーザはパスワード無しの `sudo` を持つ。`cc-home/`
+  が bind mount なので、エージェントが `sudo` を使うと結果的にホスト
+  側の `cc-home/` 内ファイルも書き換えられる。
+
+ホストセッションで触らせたくないものはコンテナにも触らせないこと。
+より厳しく分離したい場合は `network_mode: host` を外し、X11 マウントを
+外し、`dev` の sudoers エントリを削除する。
 
 ## MCP サーバ
 

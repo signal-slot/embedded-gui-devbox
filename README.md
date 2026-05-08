@@ -126,9 +126,44 @@ xhost +SI:localuser:$(id -un)        # allow this user to reach :0
 The compose file bind-mounts `/tmp/.X11-unix` and `$XAUTHORITY`
 automatically, and `DISPLAY` is inherited from the host's environment.
 
+Caveats:
+
+- `$XAUTHORITY` (or `~/.Xauthority`) must already exist on the host as
+  a *file* with valid cookies (`xauth list` should print at least one
+  entry). If neither exists, Docker silently creates an empty
+  *directory* at the bind-mount source and the X11 handshake breaks.
+- Codex strips parent env when it spawns MCP servers, so
+  `cc-home/.codex/config.toml` and `cc-home/.mcp.json` hard-code
+  `DISPLAY=:0`. On hosts where `$DISPLAY` is something else (SSH X
+  forwarding gives you `:10` etc., Xwayland often `:1`, Wayland-only
+  sessions have no X display at all), edit those two files to match,
+  or fall back to `QT_QPA_PLATFORM=offscreen` per server if you don't
+  need windows.
+
 Verified to work for Qt apps, including those using the qtvncgl platform
 plugin. Software fallback (`QT_QUICK_BACKEND=software`) handles the
 NVIDIA-driver-mismatch case where mesa GLX fails.
+
+## Security boundary
+
+This container is a developer playground for AI coding agents — it's
+deliberately permissive. Be aware that:
+
+- `network_mode: host` exposes every port the container opens directly
+  on the host, and lets the agents reach any service on `localhost`
+  with no firewall in between.
+- `/tmp/.X11-unix` and `$XAUTHORITY` are bind-mounted in. Anything
+  inside the container can see and drive every X11 client on the
+  host's display (keystrokes, screenshots, window contents).
+- `ANTHROPIC_API_KEY` is forwarded if set on the host. The agents and
+  any tool they spawn can read it.
+- The in-container `dev` user has passwordless `sudo`. Combined with
+  the bind-mounted `cc-home/`, an agent that decides to run `sudo` can
+  modify any file inside `cc-home/` from the host's perspective too.
+
+Don't run anything in here that you wouldn't trust on the host
+session. If you want stricter isolation, drop `network_mode: host`,
+remove the X11 mounts, and revoke the `dev` sudoers entry.
 
 ## MCP servers
 
