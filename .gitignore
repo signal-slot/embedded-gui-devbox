@@ -1,0 +1,17 @@
+# Container runtime state — login tokens, chat transcripts, codex sessions,
+# bash history, etc. Never commit any of it.
+cc-home/*
+!cc-home/.gitkeep
+
+# Local environment overrides (HOST_UID, MCP_DESIGN2GUI_SRC, ...)
+.env
+
+# Override host-side global ~/.gitignore which often blanket-ignores
+# .mcp.json — this repo ships the file as a public MCP template.
+# Anchored to repo root so cc-home/.mcp.json (runtime copy) stays ignored.
+!/.mcp.json
+
+# This repo ships only the generic environment. Work products (sample apps,
+# project-specific output, scratch builds) live alongside the env on disk
+# but stay out of the public tree. Add new ones below as they appear.
+coinparking/

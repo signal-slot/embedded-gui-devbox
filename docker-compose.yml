@@ -1,0 +1,28 @@
+services:
+  cc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: "${HOST_UID:-1000}"
+        GID: "${HOST_GID:-1000}"
+        MCP_DESIGN2GUI_REV: "${MCP_DESIGN2GUI_REV:-dev}"
+      additional_contexts:
+        mcp-design2gui-src: ${MCP_DESIGN2GUI_SRC:-${HOME}/src/mcp-design2gui}
+    image: cc-qt6-mcp:ubuntu-26.04
+    container_name: cc-qt6-mcp
+    hostname: cc-qt6-mcp
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/home/dev/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - LANG=ja_JP.UTF-8
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-${HOME}/.Xauthority}:/home/dev/.Xauthority:ro
+      - ./cc-home:/home/dev
+    stdin_open: true
+    tty: true
+    command: bash
