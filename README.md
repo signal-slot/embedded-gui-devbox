@@ -52,7 +52,7 @@ make lvgl        # for LVGL simulator builds
 ```bash
 # one-time: clone mcp-design2gui where MCP_DESIGN2GUI_SRC points
 # (default: $HOME/src/mcp-design2gui)
-git clone https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
+git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
 
 # from this repo's root:
 make qt          # build the qt variant

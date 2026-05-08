@@ -57,7 +57,7 @@ make lvgl        # LVGL の simulator build を扱う場合
 ```bash
 # 一度だけ: MCP_DESIGN2GUI_SRC が指す場所に mcp-design2gui を clone する
 # (デフォルト: $HOME/src/mcp-design2gui)
-git clone https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
+git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
 
 # このリポジトリのルートで:
 make qt          # qt バリアントをビルド
