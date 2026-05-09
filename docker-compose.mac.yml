@@ -21,9 +21,17 @@ services:
       args:
         UID: "${HOST_UID:-501}"
         GID: "${HOST_GID:-20}"
-        MCP_DESIGN2GUI_REV: "${MCP_DESIGN2GUI_REV:-dev}"
-      additional_contexts:
-        mcp-design2gui-src: ${MCP_DESIGN2GUI_SRC:-${HOME}/src/mcp-design2gui}
+        # Latest upstream revs / npm versions, resolved per build by the
+        # Makefile. Empty values fall back to the Dockerfile defaults
+        # (`main` for git, latest-on-install for npm).
+        CLAUDE_CODE_VERSION: "${CLAUDE_CODE_VERSION:-}"
+        CODEX_VERSION: "${CODEX_VERSION:-}"
+        MCP_PROMPT_BRIDGE_VERSION: "${MCP_PROMPT_BRIDGE_VERSION:-}"
+        MCP_VNC_REV: "${MCP_VNC_REV:-main}"
+        QTVNCGLPLUGIN_REV: "${QTVNCGLPLUGIN_REV:-main}"
+        MCP_DESIGN2GUI_REV: "${MCP_DESIGN2GUI_REV:-main}"
+        RUST_TOOLCHAIN_VERSION: "${RUST_TOOLCHAIN_VERSION:-}"
+        FLUTTER_REV: "${FLUTTER_REV:-}"
     image: embedded-gui-devbox:${VARIANT:-qt}
     container_name: embedded-gui-devbox
     hostname: embedded-gui-devbox

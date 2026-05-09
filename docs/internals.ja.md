@@ -32,58 +32,71 @@ Node.js セットアップ、mcp-vnc と mcp-design2gui の cmake ビルドな�
 | -- | --------------------------- | ---- |
 | 1  | apt                         | システム + Qt 6 開発パッケージ (最大・最安定) |
 | 2  | apt                         | libxcb-cursor0 + fonts-noto-cjk |
-| 3  | NodeSource + apt + npm      | Node.js 22 + claude-code |
+| 3  | ARG `CLAUDE_CODE_VERSION` + npm | Node.js 22 + claude-code |
 | 4  | COPY                        | patch-superbuild.sh ヘルパ |
-| 5  | git + cmake                 | mcp-vnc clone + cmake build |
-| 6  | git + cmake                 | qtvncglplugin clone + cmake build |
-| 7  | npm                         | codex + mcp-prompt-bridge |
-| **8** | **ARG MCP_DESIGN2GUI_REV** | **cache-bust の境界** |
-| 9  | COPY + cmake                | mcp-design2gui のソース + cmake build |
-| 10 | adduser                     | ホスト UID / GID に揃えたユーザ作成 |
+| 5  | ARG `MCP_VNC_REV` + git + cmake | mcp-vnc clone + cmake build |
+| 6  | ARG `QTVNCGLPLUGIN_REV` + git + cmake | qtvncglplugin clone + cmake build |
+| 7  | ARG `CODEX_VERSION` / `MCP_PROMPT_BRIDGE_VERSION` + npm | codex + mcp-prompt-bridge |
+| 8  | ARG `MCP_DESIGN2GUI_REV` + git + cmake | mcp-design2gui clone + cmake build |
+| 9  | adduser                     | ホスト UID / GID に揃えたユーザ作成 |
 
-`MCP_DESIGN2GUI_REV` を bump すると 9〜10 だけが invalidate される
-(約 90 秒)。それ以外の変更 (apt、Node、mcp-vnc、qtvncgl、codex /
-prompt-bridge、`patch-superbuild.sh`) は境界より上にあり、すべての
-バリアントステージとキャッシュを共有したまま。
+各レイヤの上に置いた ARG が、そのレイヤの cache-bust スイッチになって
+いる。Makefile は `docker compose build` を起動する前に ARG をそれぞれ
+解決する (4 つの git リポジトリは `git ls-remote HEAD`、3 つの npm
+パッケージは npm registry の HTTP API)。upstream が進むと該当 ARG の値
+が変わり、BuildKit はそのレイヤとそれより下を invalidate して再取得
+する。upstream が動いていなければキャッシュは末尾まで効いて、ビルドは
+数秒で終わる。
 
-## mcp-design2gui を BuildKit `additional_contexts` で取り込む
+`flutter` と `slint` の各バリアントステージも同じ仕組み:
+`FLUTTER_REV` (`git ls-remote refs/heads/stable`) と
+`RUST_TOOLCHAIN_VERSION` (rust-lang/rust の最新 GitHub release)。
+`lvgl` バリアントは小さな apt 段の追加だけで、追跡対象の rev はない。
 
-mcp-design2gui のソースはビルド時に clone するのではなく、BuildKit の
-`additional_contexts` でローカル clone から取り込んでいる:
+## コンポーネント別 cache-bust の仕組み
 
-```yaml
-# docker-compose.yml
-build:
-  additional_contexts:
-    mcp-design2gui-src: ${MCP_DESIGN2GUI_SRC:-${HOME}/src/mcp-design2gui}
-```
-
-Dockerfile はその名前付きコンテキストから COPY する:
+git ホスティングのコンポーネント (例として mcp-vnc; mcp-design2gui /
+qtvncglplugin / flutter も同じ要領):
 
 ```dockerfile
-COPY --from=mcp-design2gui-src CMakeLists.txt /opt/mcp-design2gui/
-COPY --from=mcp-design2gui-src src /opt/mcp-design2gui/src
-COPY --from=mcp-design2gui-src external /opt/mcp-design2gui/external
+ARG MCP_VNC_REV=main
+RUN git clone --recursive https://github.com/signal-slot/mcp-vnc /opt/mcp-vnc \
+ && cd /opt/mcp-vnc \
+ && git checkout "${MCP_VNC_REV:-main}" \
+ && git submodule update --init --recursive
 ```
 
-ここには 2 つの含意がある:
+Makefile は upstream の最新コミット SHA を渡す:
 
-1. COPY レイヤのキャッシュキーはソースの内容ハッシュ。原理的には
-   BuildKit がファイル内容をハッシュするので、コミット済の変更は自動で
-   反映される。
-2. 実際には、ローカルパスの `additional_contexts` に対する BuildKit の
-   ハッシュ計算は変更を確実に拾わないことがある。COPY のすぐ上に置いた
-   `ARG MCP_DESIGN2GUI_REV` が確実な cache-bust を保証する: Makefile が
-   ローカル clone の `git rev-parse HEAD` を渡すので、HEAD 値が変われば
-   BuildKit の判定がどうであれ COPY レイヤが invalidate される。
-
-未コミットの変更はこの仕組みでは検出されない (HEAD は親コミットと同じ
-ままなのでキャッシュキーが変わらない)。ダーティな作業ツリーをそのまま
-試したいときは、cache key を手動で 1 回 bump する:
-
-```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
+```makefile
+MCP_VNC_REV ?= $(shell git ls-remote https://github.com/signal-slot/mcp-vnc HEAD | cut -f1)
 ```
+
+`MCP_VNC_REV` は RUN コマンドから参照されているので、BuildKit はこの
+ARG 値をレイヤのキャッシュキーに織り込む。upstream の HEAD が変わる ⇒
+ARG 値が変わる ⇒ キャッシュミス ⇒ clone と checkout がやり直される。
+HEAD が同じ ⇒ ARG が同じ ⇒ キャッシュヒット、何も走らない。
+
+npm ホスティングのコンポーネント (claude-code / codex /
+mcp-prompt-bridge):
+
+```dockerfile
+ARG CLAUDE_CODE_VERSION=
+RUN npm install -g @anthropic-ai/claude-code${CLAUDE_CODE_VERSION:+@${CLAUDE_CODE_VERSION}}
+```
+
+```makefile
+CLAUDE_CODE_VERSION ?= $(shell curl -sfL https://registry.npmjs.org/@anthropic-ai/claude-code/latest | ...)
+```
+
+考え方は同じ: Makefile が引いてきたバージョン文字列が RUN 行に
+埋め込まれるので、新バージョンが publish されるたびに BuildKit の
+キャッシュキーが変わる。
+
+これらのクエリは Makefile がビルド系のターゲット (`make qt` /
+`slint` / `flutter` / `lvgl` / `rebuild`) を実行するときだけ走る。
+`make help` / `clean` / `run` / `claude` / `codex` ではネットワーク
+往復は一切発生しない。
 
 ## `patch-superbuild.sh`
 
@@ -102,29 +115,28 @@ Qt モジュール (`qtmcp`, `qtpsd`, `qtvncclient`) を ExternalProject
 このパッチがないと内側の ExternalProject ビルドがホスト Qt のヘッダや
 cmake configs を見つけられず、ビルドが落ちる。
 
-## mcp-design2gui のローカルコミットを取り込む
+## upstream の変更を取り込む
 
-ローカルの mcp-design2gui clone でコミットしたあと:
+git ・ npm のいずれにしても、追跡対象コンポーネントの更新フローは同じ:
+
+1. upstream に push / publish する。
+2. `make qt` (普段使っているバリアントでよい)。
+3. Makefile が `ls-remote HEAD` (または npm registry の `latest`) を
+   引き直し、新しい値を ARG としてビルドに渡す。
+4. BuildKit は影響のあるレイヤだけ invalidate し、新しいコミット /
+   バージョンを取得して下流まで再ビルドする。
+
+upstream を追わずに特定リビジョンに pin したいときは、対応する環境
+変数を上書きする:
 
 ```bash
-make qt          # Makefile が git rev-parse で新 HEAD を拾い直す
-                 # (普段使っているバリアントで OK)
+MCP_DESIGN2GUI_REV=abc123 make qt
+CLAUDE_CODE_VERSION=2.1.126 make qt
 ```
 
-未コミットの変更はこの仕組みでは反映されない (HEAD が親コミットと同じ
-ままなのでキャッシュキーが変わらない)。ダーティな作業ツリーをそのまま
-試したいときは、cache key を手動で 1 回 bump する:
+キャッシュ周りで何かおかしいとき (壊れたレイヤ、cache-bust 機構が
+追えていないコンポーネントなど) はフルリビルドで強制的に作り直す:
 
 ```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
-```
-
-## mcp-vnc / qtvncglplugin の更新
-
-どちらもビルド時に HTTPS で clone する (ローカルソース連携はしていない)。
-upstream に push した変更を取り込むには:
-
-```bash
-git push          # upstream リポジトリ側で push
-make rebuild      # 再 clone のため --no-cache のフルリビルド
+make rebuild      # docker compose build --no-cache
 ```

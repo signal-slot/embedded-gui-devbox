@@ -32,59 +32,70 @@ only rebuilds the bottom of the stage:
 | -- | -------------------------- | -------------- |
 | 1  | apt                        | system + Qt 6 dev (largest, very stable) |
 | 2  | apt                        | libxcb-cursor0 + fonts-noto-cjk |
-| 3  | NodeSource + apt + npm     | Node.js 22 + claude-code |
+| 3  | ARG `CLAUDE_CODE_VERSION` + npm | Node.js 22 + claude-code |
 | 4  | COPY                       | patch-superbuild.sh helper |
-| 5  | git + cmake                | mcp-vnc clone + cmake build |
-| 6  | git + cmake                | qtvncglplugin clone + cmake build |
-| 7  | npm                        | codex + mcp-prompt-bridge |
-| **8** | **ARG MCP_DESIGN2GUI_REV** | **cache-bust boundary** |
-| 9  | COPY + cmake               | mcp-design2gui sources + cmake build |
-| 10 | adduser                    | UID / GID-aware user setup |
+| 5  | ARG `MCP_VNC_REV` + git + cmake | mcp-vnc clone + cmake build |
+| 6  | ARG `QTVNCGLPLUGIN_REV` + git + cmake | qtvncglplugin clone + cmake build |
+| 7  | ARG `CODEX_VERSION` / `MCP_PROMPT_BRIDGE_VERSION` + npm | codex + mcp-prompt-bridge |
+| 8  | ARG `MCP_DESIGN2GUI_REV` + git + cmake | mcp-design2gui clone + cmake build |
+| 9  | adduser                    | UID / GID-aware user setup |
 
-Bumping `MCP_DESIGN2GUI_REV` invalidates steps 9–10 only (~90 s). Every
-other change (apt, Node, mcp-vnc, qtvncgl, codex / prompt-bridge,
-`patch-superbuild.sh`) sits above the boundary and is shared across all
-variant stages.
+Each ARG above its layer is a cache-bust knob. The Makefile resolves
+each one before invoking `docker compose build` (`git ls-remote HEAD`
+for the four git repos; the npm registry HTTP API for the three CLI
+packages). When upstream advances, the corresponding ARG value changes,
+BuildKit invalidates that layer + everything below, and the layer is
+re-fetched from upstream. When upstream is unchanged, the cache holds
+end-to-end and the build finishes in seconds.
 
-## mcp-design2gui via BuildKit `additional_contexts`
+The `flutter` and `slint` variant stages each get the same treatment:
+`FLUTTER_REV` (`git ls-remote refs/heads/stable`) and
+`RUST_TOOLCHAIN_VERSION` (the latest GitHub release on rust-lang/rust).
+The `lvgl` variant only adds a small apt step, no rev to track.
 
-mcp-design2gui sources are *not* cloned at build time — they are
-injected from a local clone via BuildKit's `additional_contexts`:
+## How the per-component cache-bust works
 
-```yaml
-# docker-compose.yml
-build:
-  additional_contexts:
-    mcp-design2gui-src: ${MCP_DESIGN2GUI_SRC:-${HOME}/src/mcp-design2gui}
-```
-
-The Dockerfile then COPYs from that named context:
+For a git-hosted component (here: mcp-vnc; mcp-design2gui /
+qtvncglplugin / flutter follow the same pattern):
 
 ```dockerfile
-COPY --from=mcp-design2gui-src CMakeLists.txt /opt/mcp-design2gui/
-COPY --from=mcp-design2gui-src src /opt/mcp-design2gui/src
-COPY --from=mcp-design2gui-src external /opt/mcp-design2gui/external
+ARG MCP_VNC_REV=main
+RUN git clone --recursive https://github.com/signal-slot/mcp-vnc /opt/mcp-vnc \
+ && cd /opt/mcp-vnc \
+ && git checkout "${MCP_VNC_REV:-main}" \
+ && git submodule update --init --recursive
 ```
 
-Two implications:
+The Makefile passes the latest commit SHA from upstream:
 
-1. The COPY layer's cache is keyed by source content. In principle
-   BuildKit hashes file contents, so committed changes propagate
-   automatically.
-2. In practice, BuildKit's hashing of local-path `additional_contexts`
-   isn't always reliable. The `ARG MCP_DESIGN2GUI_REV` placed
-   immediately above the COPY guarantees an explicit cache-bust: the
-   Makefile resolves it from the local clone's `git rev-parse HEAD`, so
-   a new HEAD always invalidates the COPY layer regardless of what
-   BuildKit thinks.
-
-Uncommitted changes are not picked up by this mechanism — they share a
-HEAD with the parent commit and so map to the same cache key. For
-one-off testing of a dirty tree, override the rev manually:
-
-```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
+```makefile
+MCP_VNC_REV ?= $(shell git ls-remote https://github.com/signal-slot/mcp-vnc HEAD | cut -f1)
 ```
+
+`MCP_VNC_REV` is referenced in the RUN command, so BuildKit folds the
+ARG value into the layer's cache key. A new upstream HEAD ⇒ different
+ARG value ⇒ cache miss ⇒ fresh clone + checkout. An unchanged HEAD ⇒
+identical ARG ⇒ cache hit, no work.
+
+For npm-hosted components (claude-code / codex / mcp-prompt-bridge):
+
+```dockerfile
+ARG CLAUDE_CODE_VERSION=
+RUN npm install -g @anthropic-ai/claude-code${CLAUDE_CODE_VERSION:+@${CLAUDE_CODE_VERSION}}
+```
+
+```makefile
+CLAUDE_CODE_VERSION ?= $(shell curl -sfL https://registry.npmjs.org/@anthropic-ai/claude-code/latest | ...)
+```
+
+Same idea: the version queried by the Makefile is interpolated into the
+RUN string, so BuildKit's cache key changes whenever a new version is
+published.
+
+The Makefile only runs these queries when a build target is on the
+command line (`make qt|slint|flutter|lvgl|rebuild`); `make help` /
+`clean` / `run` / `claude` / `codex` skip the network round-trips
+entirely.
 
 ## `patch-superbuild.sh`
 
@@ -103,29 +114,28 @@ qtmcp / qtpsd configures don't bail on a version mismatch.
 Without these patches the inner ExternalProject builds can't locate
 their host Qt headers or cmake configs.
 
-## Picking up local mcp-design2gui commits
+## Picking up upstream changes
 
-After committing in the local mcp-design2gui clone:
+For any pinnable component (git or npm), the workflow is the same:
+
+1. Push / publish upstream.
+2. Run `make qt` (or whichever variant you use day-to-day).
+3. The Makefile re-queries `ls-remote HEAD` (or the npm registry's
+   `latest`) and threads the new value into the build as an ARG.
+4. BuildKit invalidates only the affected layer, fetches the new
+   commit / version, and rebuilds downstream.
+
+If you want to pin to a specific revision instead of tracking upstream,
+override the corresponding env var:
 
 ```bash
-make qt          # the Makefile picks up the new HEAD via git rev-parse
-                 # (or whichever variant you use day-to-day)
+MCP_DESIGN2GUI_REV=abc123 make qt
+CLAUDE_CODE_VERSION=2.1.126 make qt
 ```
 
-For uncommitted changes (which all share the same HEAD as the parent
-commit and so map to the same cache key), bump the rev manually for
-one-shot testing:
+If something feels wrong with the cache (e.g. a corrupted layer or a
+component the cache machinery doesn't track), do a full rebuild:
 
 ```bash
-MCP_DESIGN2GUI_REV=dev-$(date +%s) make qt
-```
-
-## Updating mcp-vnc / qtvncglplugin
-
-Both are cloned over HTTPS at build time (no local-source pattern). To
-pick up an upstream push:
-
-```bash
-git push          # in the upstream repo
-make rebuild      # full --no-cache rebuild of the active variant
+make rebuild      # docker compose build --no-cache
 ```

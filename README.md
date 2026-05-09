@@ -55,11 +55,6 @@ make lvgl        # for LVGL simulator builds
 ## Quick start
 
 ```bash
-# one-time: clone mcp-design2gui where MCP_DESIGN2GUI_SRC points
-# (default: $HOME/src/mcp-design2gui)
-git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
-
-# from this repo's root:
 make qt          # build the qt variant
 make run         # interactive bash inside the container
 make claude      # launch Claude Code
@@ -73,13 +68,17 @@ VARIANT=slint make claude       # claude inside the slint variant
 VARIANT=flutter make run        # interactive shell inside flutter
 ```
 
-`make <variant>` resolves `MCP_DESIGN2GUI_REV` from the git HEAD of
-`$MCP_DESIGN2GUI_SRC`. Bumps to that hash invalidate just the COPY +
-cmake layers (~90s rebuild). Untouched layers (apt, Node, mcp-vnc,
-qtvncgl, codex, prompt-bridge, plus per-variant tooling) stay cached.
+Each `make <variant>` queries every pinnable component's upstream
+(`git ls-remote HEAD` for the four git repos, the npm registry HTTP API
+for the three CLIs, GitHub releases for the Rust toolchain) and
+threads the result through to the build as ARGs. Layers whose upstream
+advanced rebuild; everything else stays cached. So "nothing changed
+upstream" hits cache end-to-end and finishes in seconds, while an
+advancing component rebuilds only its own layer (~90s for design2gui,
+similar for the others).
 
-When the `git rev-parse` cache key isn't enough (e.g. uncommitted local
-changes), force a full rebuild of the active variant:
+If something feels wrong with the cache, force a full rebuild of the
+active variant:
 
 ```bash
 make rebuild     # docker compose build --no-cache (~10 min)
@@ -191,8 +190,9 @@ env block is mandatory there.
 ## Internals
 
 For maintainers / contributors: see [`docs/internals.md`](docs/internals.md)
-for the multi-stage layout, `qt` layer ordering, the `additional_contexts`
-plumbing for mcp-design2gui, and the role of `patch-superbuild.sh`.
+for the multi-stage layout, `qt` layer ordering, the per-component
+`ls-remote` cache-bust mechanism, and the role of
+`patch-superbuild.sh`.
 
 ## macOS (Apple Silicon / Intel)
 
@@ -214,8 +214,6 @@ defaults. Key differences from the Linux setup:
 Usage is the same as on Linux:
 
 ```bash
-git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
-
 make qt          # builds embedded-gui-devbox:qt natively for arm64
 make claude
 make codex
@@ -236,9 +234,14 @@ Caveats specific to Mac:
 | --- | --- | --- |
 | `VARIANT` | `qt` | Selects the Dockerfile stage / image tag for `run` / `claude` / `codex` |
 | `HOST_UID`, `HOST_GID` | `id -u` / `id -g` of the host user | Baked into the image so file ownership matches |
-| `MCP_DESIGN2GUI_SRC` | `$HOME/src/mcp-design2gui` | Path to local mcp-design2gui clone |
-| `MCP_DESIGN2GUI_REV` | HEAD of the above clone, or `dev` | Build-arg used as cache key for design2gui |
 | `ANTHROPIC_API_KEY` | unset | Forwarded to the container if set on the host |
+
+The Makefile also auto-resolves a set of upstream-rev knobs you can
+override in case you need to pin to a specific revision (otherwise the
+default is the latest from upstream): `MCP_VNC_REV`,
+`QTVNCGLPLUGIN_REV`, `MCP_DESIGN2GUI_REV`, `FLUTTER_REV`,
+`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `MCP_PROMPT_BRIDGE_VERSION`,
+`RUST_TOOLCHAIN_VERSION`.
 
 All of these can be passed inline or set in a `.env` file next to
 `docker-compose.yml`.

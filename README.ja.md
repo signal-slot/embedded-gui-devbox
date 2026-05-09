@@ -55,11 +55,6 @@ make lvgl        # LVGL の simulator build を扱う場合
 ## 使い方
 
 ```bash
-# 一度だけ: MCP_DESIGN2GUI_SRC が指す場所に mcp-design2gui を clone する
-# (デフォルト: $HOME/src/mcp-design2gui)
-git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
-
-# このリポジトリのルートで:
 make qt          # qt バリアントをビルド
 make run         # コンテナ内で対話 bash
 make claude      # Claude Code を起動
@@ -73,15 +68,15 @@ VARIANT=slint make claude       # slint バリアントで claude を起動
 VARIANT=flutter make run        # flutter バリアントの対話 shell
 ```
 
-`make <variant>` を実行すると、Makefile が `$MCP_DESIGN2GUI_SRC` の git
-HEAD から `MCP_DESIGN2GUI_REV` を解決して BuildKit に渡す。HEAD が
-変わると COPY と cmake の段だけ invalidate され (約 90 秒のリビルド)、
-それ以外 (apt、Node.js、mcp-vnc、qtvncgl、codex、prompt-bridge、
-バリアント固有の追加ツール) はキャッシュが効いたままになる。
+`make <variant>` を実行すると、Makefile が pin 可能な各コンポーネントの
+upstream を問い合わせて (4 つの git リポジトリは `git ls-remote HEAD`、
+3 つの npm CLI は npm registry HTTP API、Rust toolchain は GitHub
+releases)、結果を ARG として build に流す。upstream が進んだ層だけが
+rebuild され、それ以外はキャッシュ維持。なので「upstream に変化なし」の
+ケースは end-to-end でキャッシュヒットして数秒、変化があれば該当層
+だけ rebuild (mcp-design2gui で約 90 秒、他も同程度)。
 
-git rev-parse をキャッシュキーにするだけで足りない場合 — たとえば
-mcp-design2gui の未コミット変更を反映したいとき — はキャッシュ無しの
-フルビルドを使う:
+キャッシュが信用できないと感じたら、active variant を full rebuild:
 
 ```bash
 make rebuild     # docker compose build --no-cache (約 10 分)
@@ -192,9 +187,10 @@ mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
 
 ## Internals (内部仕様)
 
-メンテナ向けの解説 — レイヤ順序、キャッシュ戦略、`additional_contexts`
-の挙動、`patch-superbuild.sh` の役割など — は
-[`docs/internals.ja.md`](docs/internals.ja.md) にまとめてある。
+メンテナ向けの解説 — multi-stage 構成、`qt` ステージのレイヤ順、
+`ls-remote` ベースのキャッシュ無効化、`patch-superbuild.sh` の役割
+など — は [`docs/internals.ja.md`](docs/internals.ja.md) にまとめて
+ある。
 
 ## macOS (Apple Silicon / Intel)
 
@@ -217,8 +213,6 @@ Linux 版との主な違い:
 使い方は Linux と同じ:
 
 ```bash
-git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
-
 make qt          # arm64 ネイティブで embedded-gui-devbox:qt をビルド
 make claude
 make codex
@@ -239,9 +233,13 @@ Mac 特有の注意点:
 | -------------------- | ---------------------------- | ---- |
 | `VARIANT`            | `qt`                         | `run` / `claude` / `codex` で使う Dockerfile ステージとイメージタグ |
 | `HOST_UID`, `HOST_GID` | ホストユーザの `id -u` / `id -g` | コンテナ内の `dev` ユーザに焼き込んでファイル所有者を一致させる |
-| `MCP_DESIGN2GUI_SRC` | `$HOME/src/mcp-design2gui`   | mcp-design2gui のローカル clone のパス |
-| `MCP_DESIGN2GUI_REV` | 上記 clone の HEAD、または `dev` | design2gui 用キャッシュキー (build-arg) |
 | `ANTHROPIC_API_KEY`  | 未設定                       | ホスト側で設定しているとコンテナに転送される |
+
+Makefile はこれに加えて pinning 用の knob を自動解決する。デフォルトは
+upstream の最新が入るが、特定 rev に固定したい場合は手動で上書き可能:
+`MCP_VNC_REV` / `QTVNCGLPLUGIN_REV` / `MCP_DESIGN2GUI_REV` /
+`FLUTTER_REV` / `CLAUDE_CODE_VERSION` / `CODEX_VERSION` /
+`MCP_PROMPT_BRIDGE_VERSION` / `RUST_TOOLCHAIN_VERSION`。
 
 これらは `make` コマンドにインラインで渡してもいいし、
 `docker-compose.yml` の隣に `.env` ファイルを置いてまとめて指定しても

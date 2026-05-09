@@ -2,9 +2,9 @@
 #
 # Build variants (each maps to a Dockerfile stage of the same name):
 #
-#   make qt         Qt 6 only (base image, ~2.4 GB)
+#   make qt         Qt 6 only (base image, ~2.9 GB)
 #   make slint      qt + Rust toolchain for Slint
-#   make flutter    qt + Flutter SDK (Linux desktop precached, ~+1.3 GB)
+#   make flutter    qt + Flutter SDK (Linux desktop precached, ~+1.9 GB)
 #   make lvgl       qt + SDL2 dev libs for the LVGL desktop simulator
 #
 # Run / use the active variant (defaults to qt; override with VARIANT=...):
@@ -19,30 +19,65 @@
 #   make rebuild    full --no-cache build of the active variant
 #   make clean      remove all built variant images
 #
-# Override knobs:
-#   VARIANT=slint                       make qt slint
-#   MCP_DESIGN2GUI_SRC=/path/to/clone   make qt
-#   MCP_DESIGN2GUI_REV=dev-$(date +%s)  make qt   # force cache-bust
-
-MCP_DESIGN2GUI_SRC ?= $(HOME)/src/mcp-design2gui
-
-# Resolve the build-arg used to invalidate the COPY layer for mcp-design2gui.
-# Prefer an explicit override (MCP_DESIGN2GUI_REV=...), else use the local
-# clone's HEAD commit hash. Falls back to "dev" when git is unavailable.
-GIT_REV := $(shell git -C $(MCP_DESIGN2GUI_SRC) rev-parse HEAD 2>/dev/null)
-MCP_DESIGN2GUI_REV ?= $(if $(GIT_REV),$(GIT_REV),dev)
+# Each build resolves the latest upstream rev / npm version for every
+# pinnable component (mcp-vnc, qtvncglplugin, mcp-design2gui, claude-code,
+# codex, mcp-prompt-bridge, rust-toolchain, flutter) and threads it
+# through to the Dockerfile as an ARG. Layers whose ARG value didn't move
+# stay cached; layers whose upstream advanced rebuild automatically.
 
 VARIANT ?= qt
 
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
-export MCP_DESIGN2GUI_SRC
-export MCP_DESIGN2GUI_REV
 export VARIANT
 
-COMPOSE := docker compose
+# Pick the compose file and the .mcp.json bootstrap template based on
+# the host OS. macOS skips X11 / host networking and runs MCP servers
+# with QT_QPA_PLATFORM=offscreen.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+COMPOSE_FILE := docker-compose.mac.yml
+MCP_TEMPLATE := .mcp.json.mac
+else
+COMPOSE_FILE := docker-compose.yml
+MCP_TEMPLATE := .mcp.json
+endif
+
+COMPOSE := docker compose -f $(COMPOSE_FILE)
 IMAGE_NAME := embedded-gui-devbox
 TARGETS := qt slint flutter lvgl
+
+# Only hit the network for upstream-rev queries when an actual build is
+# requested — make help / clean / run / claude / codex shouldn't trigger
+# external lookups.
+NEED_REV_QUERY := $(filter $(TARGETS) rebuild,$(MAKECMDGOALS))
+ifneq ($(NEED_REV_QUERY),)
+
+# Latest commit on the default branch for each git-hosted component.
+# Empty (network failure) falls back to the Dockerfile's "main" default.
+MCP_VNC_REV       ?= $(shell git ls-remote https://github.com/signal-slot/mcp-vnc HEAD 2>/dev/null | cut -f1)
+QTVNCGLPLUGIN_REV ?= $(shell git ls-remote https://github.com/signal-slot/qtvncglplugin HEAD 2>/dev/null | cut -f1)
+MCP_DESIGN2GUI_REV ?= $(shell git ls-remote https://github.com/signal-slot/mcp-design2gui HEAD 2>/dev/null | cut -f1)
+FLUTTER_REV       ?= $(shell git ls-remote https://github.com/flutter/flutter refs/heads/stable 2>/dev/null | cut -f1)
+
+# Latest published version of each npm-hosted CLI / package, queried
+# directly from the npm registry HTTP API (avoids requiring the npm CLI
+# on the host).
+CLAUDE_CODE_VERSION       ?= $(shell curl -sfL https://registry.npmjs.org/@anthropic-ai/claude-code/latest 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+CODEX_VERSION             ?= $(shell curl -sfL https://registry.npmjs.org/@openai/codex/latest 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+MCP_PROMPT_BRIDGE_VERSION ?= $(shell curl -sfL https://registry.npmjs.org/mcp-prompt-bridge/latest 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+# Latest tagged Rust release (rust-lang/rust uses semver tags like 1.95.0
+# on its release tarballs; the GitHub releases API surface them). Note
+# that GitHub's API JSON has a space after the colon, so the extractor
+# tolerates it.
+RUST_TOOLCHAIN_VERSION    ?= $(shell curl -sfL https://api.github.com/repos/rust-lang/rust/releases/latest 2>/dev/null | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+
+endif
+
+export MCP_VNC_REV QTVNCGLPLUGIN_REV MCP_DESIGN2GUI_REV FLUTTER_REV
+export CLAUDE_CODE_VERSION CODEX_VERSION MCP_PROMPT_BRIDGE_VERSION
+export RUST_TOOLCHAIN_VERSION
 
 .PHONY: help $(TARGETS) rebuild run claude codex clean
 
@@ -58,8 +93,6 @@ help:
 	@echo "Misc:"
 	@echo "  make rebuild  --no-cache rebuild of the active variant"
 	@echo "  make clean    remove all built $(IMAGE_NAME):* images"
-	@echo ""
-	@echo "Active design2gui rev: $(MCP_DESIGN2GUI_REV)"
 
 # Each variant target sets VARIANT=<itself> for the duration of one build.
 # Bootstrap cc-home/.mcp.json from the repo's template on a fresh clone

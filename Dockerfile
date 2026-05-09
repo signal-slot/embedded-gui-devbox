@@ -20,9 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Qt 6.5+ xcb platform plugin needs libxcb-cursor0 at runtime, and
 # fonts-noto-cjk supplies Japanese glyphs (fontconfig falls back from
-# "Source Han Sans" to Noto Sans CJK JP). Placed BEFORE the
-# MCP_DESIGN2GUI_REV pivot so a design2gui rev bump never invalidates
-# this slow apt layer (Ubuntu 26.04 mirrors retry for many minutes).
+# "Source Han Sans" to Noto Sans CJK JP).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libxcb-cursor0 \
@@ -35,7 +33,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code
+# Each *_VERSION / *_REV ARG below is the cache-bust knob for its layer:
+# the Makefile fills it from `npm view ... version` (npm) or
+# `git ls-remote <url> HEAD` (git) on every build, so when upstream
+# advances the corresponding layer rebuilds automatically.
+
+ARG CLAUDE_CODE_VERSION=
+RUN npm install -g @anthropic-ai/claude-code${CLAUDE_CODE_VERSION:+@${CLAUDE_CODE_VERSION}}
 
 # Helper: align submodule QT_REPO_MODULE_VERSION with system Qt and patch
 # Debian/Ubuntu multiarch path layout for the superbuild.
@@ -47,7 +51,11 @@ RUN chmod +x /usr/local/bin/patch-superbuild.sh
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:"
 
 # --- Build mcp-vnc ---
-RUN git clone --recursive https://github.com/signal-slot/mcp-vnc /opt/mcp-vnc
+ARG MCP_VNC_REV=main
+RUN git clone --recursive https://github.com/signal-slot/mcp-vnc /opt/mcp-vnc \
+ && cd /opt/mcp-vnc \
+ && git checkout "${MCP_VNC_REV:-main}" \
+ && git submodule update --init --recursive
 WORKDIR /opt/mcp-vnc
 RUN /usr/local/bin/patch-superbuild.sh 3rdparty/qtmcp/.cmake.conf 3rdparty/qtvncclient/.cmake.conf \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -61,34 +69,34 @@ RUN /usr/local/bin/patch-superbuild.sh 3rdparty/qtmcp/.cmake.conf 3rdparty/qtvnc
 
 # --- Build qtvncglplugin (GPU-accelerated VNC platform plugin) ---
 # Installs libqvncgl.so into the system Qt's platform plugin dir so Qt can
-# auto-discover it (run apps with `-platform vncgl`). Placed BEFORE the
-# MCP_DESIGN2GUI_REV pivot so design2gui bumps don't reclone/rebuild it.
+# auto-discover it (run apps with `-platform vncgl`).
+ARG QTVNCGLPLUGIN_REV=main
 RUN git clone --recursive https://github.com/signal-slot/qtvncglplugin /opt/qtvncglplugin \
  && cd /opt/qtvncglplugin \
+ && git checkout "${QTVNCGLPLUGIN_REV:-main}" \
+ && git submodule update --init --recursive \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
  && cmake --build build \
  && cmake --install build \
  && rm -rf /opt/qtvncglplugin/build
 
-# OpenAI Codex CLI alongside Claude Code. Placed just above the
-# MCP_DESIGN2GUI_REV pivot so design2gui bumps don't reinstall it.
-RUN npm install -g @openai/codex mcp-prompt-bridge
+# OpenAI Codex CLI alongside Claude Code, plus prompt-bridge.
+ARG CODEX_VERSION=
+ARG MCP_PROMPT_BRIDGE_VERSION=
+RUN npm install -g \
+      @openai/codex${CODEX_VERSION:+@${CODEX_VERSION}} \
+      mcp-prompt-bridge${MCP_PROMPT_BRIDGE_VERSION:+@${MCP_PROMPT_BRIDGE_VERSION}}
 
-# === MCP_DESIGN2GUI_REV pivot =========================================
-# Everything above this line stays cached when only MCP_DESIGN2GUI_REV
-# changes. Below this line is rebuilt every time the rev bumps.
-#
-# Sources are injected from build context "mcp-design2gui-src", configured
-# in docker-compose.yml's additional_contexts so we pick up uncommitted
-# local changes. Bump rev from compose with:
-#   MCP_DESIGN2GUI_REV=$(git -C <path-to-mcp-design2gui> rev-parse HEAD) \
-#       docker compose build
-# (Or use `make build` from this directory which does it for you.)
-ARG MCP_DESIGN2GUI_REV=dev
+# --- Build mcp-design2gui ---
+# Cloned from upstream just like mcp-vnc / qtvncglplugin; the Makefile
+# resolves MCP_DESIGN2GUI_REV from `git ls-remote` so a new push triggers
+# a re-clone + cmake rebuild (~90s) without touching the layers above.
+ARG MCP_DESIGN2GUI_REV=main
 LABEL design2gui_rev="$MCP_DESIGN2GUI_REV"
-COPY --from=mcp-design2gui-src CMakeLists.txt /opt/mcp-design2gui/
-COPY --from=mcp-design2gui-src src /opt/mcp-design2gui/src
-COPY --from=mcp-design2gui-src external /opt/mcp-design2gui/external
+RUN git clone --recursive https://github.com/signal-slot/mcp-design2gui /opt/mcp-design2gui \
+ && cd /opt/mcp-design2gui \
+ && git checkout "${MCP_DESIGN2GUI_REV:-main}" \
+ && git submodule update --init --recursive
 WORKDIR /opt/mcp-design2gui
 RUN /usr/local/bin/patch-superbuild.sh external/qtpsd/.cmake.conf external/qtmcp/.cmake.conf \
  && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -134,8 +142,10 @@ USER root
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
+ARG RUST_TOOLCHAIN_VERSION=
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path \
+      | sh -s -- -y --default-toolchain "${RUST_TOOLCHAIN_VERSION:-stable}" \
+        --profile minimal --no-modify-path \
  && chmod -R a+w /usr/local/cargo /usr/local/rustup
 USER dev
 CMD ["bash"]
@@ -170,7 +180,10 @@ RUN apt-get update \
       clang libgtk-3-dev libsecret-1-dev liblzma-dev \
       unzip xz-utils \
  && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 -b stable https://github.com/flutter/flutter /opt/flutter \
+ARG FLUTTER_REV=
+RUN git clone -b stable https://github.com/flutter/flutter /opt/flutter \
+ && cd /opt/flutter \
+ && [ -z "$FLUTTER_REV" ] || git checkout "$FLUTTER_REV" \
  && chown -R dev: /opt/flutter
 ENV PATH=/opt/flutter/bin:$PATH
 USER dev
