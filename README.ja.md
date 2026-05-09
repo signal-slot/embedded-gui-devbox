@@ -196,6 +196,43 @@ mesa GLX が NVIDIA ドライバ不一致で失敗する場合は
 の挙動、`patch-superbuild.sh` の役割など — は
 [`docs/internals.ja.md`](docs/internals.ja.md) にまとめてある。
 
+## macOS (Apple Silicon / Intel)
+
+Makefile が `uname -s` で Darwin を検出し、Linux の代わりに
+`docker-compose.mac.yml` と `.mcp.json.mac` を使うよう自動で切り替える。
+Linux 版との主な違い:
+
+- `network_mode: host` を外している (Docker Desktop は Linux VM 越しに
+  動くので、`host` は VM のホスト = 仮想マシン内部を指すだけで Mac の
+  ホスト網には届かない)。
+- X11 関連を全部抜いている (`/tmp/.X11-unix` も `XAUTHORITY` も Mac には
+  ない)。claude / codex はターミナルで完結し、MCP サーバは
+  `QT_QPA_PLATFORM=offscreen` 起動 (コンテナ内 GUI レンダリング無し)。
+- Apple Silicon ではネイティブに `linux/arm64` でビルドされる。Intel
+  Mac では `linux/amd64`。Docker Desktop の Rosetta エミュレーションで
+  どちらにも倒せる。
+- macOS の UID/GID は典型的に `501:20`。ビルド引数は `id -u` / `id -g`
+  を拾うので、ファイル所有権はホスト側と自動的に揃う。
+
+使い方は Linux と同じ:
+
+```bash
+git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
+
+make qt          # arm64 ネイティブで embedded-gui-devbox:qt をビルド
+make claude
+make codex
+```
+
+Mac 特有の注意点:
+- 後からコンテナ内のサービスを Mac 側に露出したくなった場合 (例:
+  mcp-vnc を `:5900` でサーバとして公開する) は、`docker-compose.mac.yml`
+  に `ports:` ブロックを足す。
+- Linux で使っていた `cc-home/` をそのまま Mac に持ち込むと、Linux 用の
+  `cc-home/.mcp.json` (`DISPLAY` / `XAUTHORITY` 入り) が残ったままになる。
+  `cc-home/.mcp.json` を消して Mac 用テンプレートから再生成するか、
+  手で X11 エントリを削るかのどちらかで対応する。
+
 ## 環境変数
 
 | 変数名               | デフォルト                   | 用途 |

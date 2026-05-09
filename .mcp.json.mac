@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "design2gui": {
+      "command": "mcp-design2gui",
+      "args": [],
+      "env": {
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_PLUGIN_PATH": "/usr/local/lib/qt6/plugins"
+      }
+    },
+    "vnc": {
+      "command": "mcp-vnc",
+      "args": [],
+      "env": {
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_PLUGIN_PATH": "/usr/local/lib/qt6/plugins"
+      }
+    },
+    "prompt-bridge": {
+      "command": "mcp-prompt-bridge",
+      "args": []
+    }
+  }
+}

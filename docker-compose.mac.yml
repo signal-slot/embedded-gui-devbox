@@ -1,0 +1,37 @@
+# Compose config for macOS hosts (selected automatically by the Makefile
+# when `uname -s` reports Darwin). Differences from docker-compose.yml:
+#
+#   - No `network_mode: host` (Docker Desktop on Mac runs in a Linux VM,
+#     so 'host' would scope to the VM, not the Mac).
+#   - No X11 / DISPLAY / XAUTHORITY plumbing — claude / codex run in the
+#     terminal, MCP servers run with QT_QPA_PLATFORM=offscreen via the
+#     .mcp.json.mac template the Makefile bootstraps from.
+#   - cc-home is the only bind mount; everything else lives in the
+#     image (or in named docker volumes if you add them).
+#
+# If you later need to expose a service from the container (e.g.
+# mcp-vnc acting as a VNC server on :5900), add a `ports:` block.
+
+services:
+  cc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ${VARIANT:-qt}
+      args:
+        UID: "${HOST_UID:-501}"
+        GID: "${HOST_GID:-20}"
+        MCP_DESIGN2GUI_REV: "${MCP_DESIGN2GUI_REV:-dev}"
+      additional_contexts:
+        mcp-design2gui-src: ${MCP_DESIGN2GUI_SRC:-${HOME}/src/mcp-design2gui}
+    image: embedded-gui-devbox:${VARIANT:-qt}
+    container_name: embedded-gui-devbox
+    hostname: embedded-gui-devbox
+    environment:
+      - LANG=en_US.UTF-8
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./cc-home:/home/dev
+    stdin_open: true
+    tty: true
+    command: bash

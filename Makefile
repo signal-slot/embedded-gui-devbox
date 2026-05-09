@@ -62,13 +62,12 @@ help:
 	@echo "Active design2gui rev: $(MCP_DESIGN2GUI_REV)"
 
 # Each variant target sets VARIANT=<itself> for the duration of one build.
-# Bootstrap cc-home/.mcp.json from the repo's template on a fresh clone so
-# Claude Code finds its MCP server registrations on first launch (the
-# template lives at .mcp.json; cc-home is bind-mounted as $HOME inside
-# the container, and cc-home/* is gitignored so this file is missing on a
-# fresh checkout).
+# Bootstrap cc-home/.mcp.json from the repo's template on a fresh clone
+# (cc-home/* is gitignored, so this file is missing on a fresh
+# checkout). The Linux template wires X11; the macOS template falls
+# back to QT_QPA_PLATFORM=offscreen.
 $(TARGETS):
-	@test -f cc-home/.mcp.json || cp .mcp.json cc-home/.mcp.json
+	@test -f cc-home/.mcp.json || cp $(MCP_TEMPLATE) cc-home/.mcp.json
 	VARIANT=$@ $(COMPOSE) build
 
 rebuild:

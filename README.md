@@ -194,6 +194,42 @@ For maintainers / contributors: see [`docs/internals.md`](docs/internals.md)
 for the multi-stage layout, `qt` layer ordering, the `additional_contexts`
 plumbing for mcp-design2gui, and the role of `patch-superbuild.sh`.
 
+## macOS (Apple Silicon / Intel)
+
+The Makefile auto-detects Darwin via `uname -s` and swaps in
+`docker-compose.mac.yml` + `.mcp.json.mac` instead of the Linux
+defaults. Key differences from the Linux setup:
+
+- No `network_mode: host` (Docker Desktop on Mac runs in a Linux VM,
+  so `host` would scope to the VM, not the Mac).
+- No X11 plumbing — claude / codex run in your terminal, MCP servers
+  start with `QT_QPA_PLATFORM=offscreen` (no GUI rendering inside the
+  container).
+- Apple Silicon images build natively as `linux/arm64`; Docker
+  Desktop's Rosetta-backed emulation handles the Intel path if you
+  ever need it.
+- macOS UID/GID is typically `501:20`; the build args follow `id -u`
+  / `id -g` so file ownership lines up automatically.
+
+Usage is the same as on Linux:
+
+```bash
+git clone --recursive https://github.com/signal-slot/mcp-design2gui $HOME/src/mcp-design2gui
+
+make qt          # builds embedded-gui-devbox:qt natively for arm64
+make claude
+make codex
+```
+
+Caveats specific to Mac:
+- If you later need to expose a service from the container (e.g. mcp-vnc
+  acting as a server on `:5900`), add a `ports:` block to
+  `docker-compose.mac.yml`.
+- If you bring an existing `cc-home/` over from a Linux host, the
+  Linux-flavoured `cc-home/.mcp.json` (with `DISPLAY` / `XAUTHORITY`)
+  will still be there. Either delete `cc-home/.mcp.json` so the Mac
+  template seeds a fresh one, or hand-edit it to drop the X11 entries.
+
 ## Knobs
 
 | Env var | Default | Purpose |
